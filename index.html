@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fff7ef">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="全世界最聪明的小羊的专属网络小屋：写给你的想念、回忆、相册与关心。">
+  <meta property="og:title" content="全世界最聪明的小羊的专属网络小屋">
+  <meta property="og:description" content="有些话，想慢慢说给你听。">
+  <title>全世界最聪明的小羊的专属网络小屋</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./script.js" defer></script>
+</head>
+<body>
+  <svg class="svg-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="sheep-face" viewBox="0 0 180 168">
+      <ellipse cx="90" cy="137" rx="47" ry="23" fill="#f2d2c1" opacity=".55"/>
+      <path d="M47 73C19 66 19 105 43 108c17 2 25-12 25-26M133 73c28-7 28 32 4 35-17 2-25-12-25-26" fill="#ebc7a8" stroke="#75574a" stroke-width="3"/>
+      <path d="M46 79c-15-4-19 12-9 19M134 79c15-4 19 12 9 19" fill="none" stroke="#d2a98c" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="50" cy="55" r="27" fill="#fffdf8" stroke="#75574a" stroke-width="3"/>
+      <circle cx="76" cy="38" r="29" fill="#fffdf8" stroke="#75574a" stroke-width="3"/>
+      <circle cx="105" cy="38" r="29" fill="#fffdf8" stroke="#75574a" stroke-width="3"/>
+      <circle cx="133" cy="56" r="26" fill="#fffdf8" stroke="#75574a" stroke-width="3"/>
+      <circle cx="90" cy="74" r="52" fill="#fffdf8" stroke="#75574a" stroke-width="3"/>
+      <ellipse cx="90" cy="91" rx="38" ry="35" fill="#f9e6d5"/>
+      <path d="M68 76c3-5 10-5 13 0M99 76c3-5 10-5 13 0" fill="none" stroke="#5e443d" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cx="65" cy="89" rx="7" ry="4" fill="#efa9a3" opacity=".8"/>
+      <ellipse cx="115" cy="89" rx="7" ry="4" fill="#efa9a3" opacity=".8"/>
+      <path d="M85 92c2-3 8-3 10 0-2 3-8 3-10 0ZM90 94v6m0 0c-4 6-9 6-13 1m13-1c4 6 9 6 13 1" fill="#805953" stroke="#805953" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M124 40c7-12 17-10 18-1-6-2-10 2-12 8" fill="#ec9c9f" stroke="#75574a" stroke-width="2"/>
+      <circle cx="132" cy="42" r="4" fill="#f9d3ba"/>
+    </symbol>
+    <symbol id="heart-icon" viewBox="0 0 32 32">
+      <path d="M16 27S3 19 3 10a7 7 0 0 1 13-3 7 7 0 0 1 13 3c0 9-13 17-13 17Z" fill="currentColor"/>
+    </symbol>
+  </svg>
+
+  <div class="site-shell" id="app">
+    <header class="topbar">
+      <button class="back-button" id="back-button" type="button" aria-label="返回上一页" hidden><span aria-hidden="true">←</span> 返回</button>
+      <div class="topbar-center"><span class="tiny-star" aria-hidden="true">✦</span> 小羊的网络小屋 <span class="tiny-star" aria-hidden="true">✦</span></div>
+      <div class="topbar-tools"><button class="music-toggle" id="music-toggle" type="button" aria-label="播放背景音乐" aria-pressed="false" title="背景音乐" hidden><span aria-hidden="true">♫</span></button><span class="step-counter" id="step-counter" aria-label="第 1 页，共 7 页">01 / 07</span></div>
+    </header>
+    <audio id="background-music" src="./background-music.mp3" preload="auto" autoplay loop></audio>
+
+    <main id="story" aria-live="polite">
+      <section class="scene scene-cover is-active" data-step="0" aria-labelledby="cover-title">
+        <div class="doodle doodle-sparkle sparkle-cover-1" aria-hidden="true">✳</div>
+        <div class="doodle doodle-heart heart-cover-1" aria-hidden="true">♥</div>
+        <div class="cover-content">
+          <p class="eyebrow"><span class="eyebrow-line"></span> 一份只属于你的心意 <span class="eyebrow-line"></span></p>
+          <h1 id="cover-title">嗨，<br><em>全世界最聪明</em><br>的小羊</h1>
+          <p class="house-name">全世界最聪明的小羊的专属网络小屋</p>
+          <p class="cover-subtitle">给你一段大约两分钟的小旅程，<br>从想念出发，走到心里。</p>
+          <div class="cover-art" aria-hidden="true">
+            <div class="art-halo"></div>
+            <svg class="lamb lamb-cover"><use href="#sheep-face"/></svg>
+            <div class="envelope" id="envelope"><div class="envelope-back"></div><div class="envelope-letter"><span>to you</span><svg><use href="#heart-icon"/></svg></div><div class="envelope-front"></div><div class="envelope-flap"></div><div class="envelope-seal">♥</div></div>
+            <span class="art-star art-star-a">✦</span><span class="art-star art-star-b">✧</span>
+          </div>
+          <p class="cover-whisper">准备好拆开了吗？</p>
+        </div>
+        <div class="scene-actions"><button class="primary-button" type="button" data-next><span id="cover-open-label">拆开这封信</span> <span aria-hidden="true">↗</span></button><p class="button-note" id="cover-music-hint" aria-live="polite">往后每一页，都等你亲手打开</p></div>
+      </section>
+
+      <section class="scene scene-missing" data-step="1" aria-labelledby="missing-title" hidden>
+        <div class="scene-heading"><p class="eyebrow">第 一 站 · 想 念</p><h2 id="missing-title">有些想念，<br><em>真的藏不住。</em></h2><p class="scene-intro">全世界最聪明的小羊，今天也想把这些话说给你听。</p></div>
+        <div class="night-window" aria-hidden="true"><span class="moon"></span><span class="window-star star-one">✦</span><span class="window-star star-two">✧</span><span class="window-star star-three">✦</span><div class="window-hill hill-back"></div><div class="window-hill hill-front"></div><span class="window-heart">♥</span></div>
+        <div class="note-paper missing-note"><span class="paper-pin" aria-hidden="true">✿</span><p>有时候只是看见一点小小的美好，<br>就会想：要是你也在这里就好了。</p><p>看见晚霞，听见一首温柔的歌，<br>都想把那一刻的心情分享给你。</p><p>忙完一天，会想知道你过得怎么样，<br>工作顺不顺利，有没有好好吃饭。</p><p>想念会悄悄藏在平常的日子里，<br>让我想把每一份温柔都留给你。</p><p class="note-highlight">全世界最聪明的小羊，<br>今天也辛苦了。我很想你。</p></div>
+        <div class="scene-actions"><button class="primary-button" type="button" data-next>继续听我说 <span aria-hidden="true">→</span></button></div>
+      </section>
+
+      <section class="scene scene-memories" data-step="2" aria-labelledby="memory-title" hidden>
+        <div class="scene-heading"><p class="eyebrow">第 二 站 · 回 忆</p><h2 id="memory-title">和你有关的日子，<br><em>都值得珍藏。</em></h2><p class="scene-intro">轻轻点开每张小卡片，看看我偷偷收好的片段。</p></div>
+        <div class="memory-stack" id="memory-stack">
+          <article class="memory-card memory-one"><button class="memory-toggle" type="button" aria-expanded="false" aria-controls="memory-detail-1"><span class="memory-number">01</span><span class="memory-label"><strong id="memory-title-1">我们的小小回忆</strong><small>点击翻开这一页</small></span><span class="memory-arrow" aria-hidden="true">↗</span></button><div class="memory-detail" id="memory-detail-1" hidden><p id="memory-text-1"></p></div></article>
+          <article class="memory-card memory-two"><button class="memory-toggle" type="button" aria-expanded="false" aria-controls="memory-detail-2"><span class="memory-number">02</span><span class="memory-label"><strong id="memory-title-2">另一页温柔时刻</strong><small>点击翻开这一页</small></span><span class="memory-arrow" aria-hidden="true">↗</span></button><div class="memory-detail" id="memory-detail-2" hidden><p id="memory-text-2"></p></div></article>
+        </div>
+        <div class="memory-decoration" aria-hidden="true"><span>✿</span><span>♡</span><span>✧</span></div>
+        <div class="scene-actions"><button class="primary-button" type="button" data-next>继续往前走 <span aria-hidden="true">→</span></button></div>
+      </section>
+
+      <section class="scene scene-album" data-step="3" aria-labelledby="album-title" hidden>
+        <div class="scene-heading"><p class="eyebrow">第 三 站 · 时 光 相 册</p><h2 id="album-title">把这些画面，<br><em>轻轻收进心里。</em></h2><p class="scene-intro">六张照片，六次心动。点小照片，慢慢翻阅。</p></div>
+        <div class="album-frame" id="album-frame">
+          <div class="album-photo-wrap"><img id="album-photo" src="./photos/sky-01.jpg" alt="夜色中的两位角色与闪烁的光点" width="1756" height="810"><span class="album-shimmer" aria-hidden="true"></span></div>
+          <div class="album-caption"><span class="album-page" id="album-page">01 / 06</span><h3 id="album-caption-title">夜里的光</h3><p id="album-caption-text">光点把夜色点亮，也把这一刻留在心里。</p></div>
+        </div>
+        <div class="album-controls"><button type="button" id="album-prev" aria-label="上一张照片">←</button><p>点照片看看下一张 <span aria-hidden="true">✦</span></p><button type="button" id="album-next" aria-label="下一张照片">→</button></div>
+        <div class="album-thumbnails" id="album-thumbnails" aria-label="选择照片"></div>
+        <button class="album-secret" id="album-secret" type="button" aria-expanded="false">这里好像还藏了一张照片 <span aria-hidden="true">♡</span></button>
+        <p class="album-secret-note" id="album-secret-note" hidden>第七张照片，是你看到这里时笑起来的样子。<br>这张只存在我心里，最舍不得弄丢。</p>
+        <div class="scene-actions"><button class="primary-button" type="button" data-next>带着照片继续走 <span aria-hidden="true">→</span></button></div>
+      </section>
+
+      <section class="scene scene-care" data-step="4" aria-labelledby="care-title" hidden>
+        <div class="scene-heading"><p class="eyebrow">第 四 站 · 关 心</p><h2 id="care-title">想把一点点温柔，<br><em>放进你的每一天。</em></h2><p class="scene-intro">给全世界最聪明的小羊的三张小纸条。</p></div>
+        <div class="care-list"><button class="care-card" type="button" aria-expanded="false"><span class="care-icon" aria-hidden="true">☕</span><span class="care-copy"><strong>好好吃饭</strong><span class="care-detail">工作再忙，也给自己留一点认真吃饭的时间。别总拿自己凑合，你值得被好好照顾。</span></span><span class="care-plus" aria-hidden="true">＋</span></button><button class="care-card" type="button" aria-expanded="false"><span class="care-icon" aria-hidden="true">☾</span><span class="care-copy"><strong>记得休息</strong><span class="care-detail">工作顺利很重要，你也一样重要。累了就慢下来，今天没做完的事，明天再继续也可以。</span></span><span class="care-plus" aria-hidden="true">＋</span></button><button class="care-card" type="button" aria-expanded="false"><span class="care-icon" aria-hidden="true">♡</span><span class="care-copy"><strong>心情要放晴</strong><span class="care-detail">开心的事，我想认真听你分享；不顺心的事，也可以慢慢告诉我。你不用一直表现得很坚强。</span></span><span class="care-plus" aria-hidden="true">＋</span></button></div>
+        <div class="personal-care"><svg aria-hidden="true"><use href="#heart-icon"/></svg><p id="personal-care-line"></p></div><p class="care-afterword">忙到忘记抬头时，记得喝口水、看看窗外。<br>如果偶尔累了，就让我多关心你一点。</p>
+        <div class="scene-actions"><button class="primary-button" type="button" data-next>收到这份关心 <span aria-hidden="true">→</span></button></div>
+      </section>
+
+      <section class="scene scene-prank" data-step="5" aria-labelledby="prank-title" hidden>
+        <div class="scene-heading"><p class="eyebrow">第 五 站 · 秘 密 测 试</p><h2 id="prank-title">等等，先做一道<br><em>超简单的题。</em></h2></div>
+        <div class="prank-illustration" aria-hidden="true"><div class="prank-sun">☀</div><svg class="lamb lamb-prank"><use href="#sheep-face"/></svg><span class="prank-question">?</span></div>
+        <div class="quiz-card"><p class="quiz-label">专属小测试 · 只有一道题</p><h3>全世界最聪明的小羊，<br>今天有多想我？</h3><div class="quiz-options"><button class="choice-button choice-main" type="button" data-reveal>超级想！ <span aria-hidden="true">♥</span></button><button class="choice-button choice-tease" id="tease-button" type="button">就一点点想 <span aria-hidden="true">↗</span></button></div><p class="quiz-footnote" id="quiz-footnote">放心，怎么回答都是满分。</p></div>
+        <div class="meter-overlay" id="meter-overlay" role="status" aria-live="assertive" hidden><div class="meter-card"><div class="meter-heart" aria-hidden="true">♥</div><p class="meter-kicker">检测中 · · ·</p><div class="meter-track"><div class="meter-fill"></div></div><strong>想念值爆表！</strong><span>其实我比你想的还要想你。</span></div></div>
+      </section>
+
+      <section class="scene scene-finale" data-step="6" aria-labelledby="finale-title" hidden>
+        <div class="celebration" aria-hidden="true"><span>♥</span><span>✦</span><span>✳</span><span>♥</span><span>✧</span><span>♥</span><span>✦</span><span>✳</span></div>
+        <div class="scene-heading finale-heading"><p class="eyebrow">最 后 一 站 · 给 你</p><h2 id="finale-title">这封信的答案，<br><em>一直都是你。</em></h2></div>
+        <div class="finale-art" aria-hidden="true"><span class="finale-halo"></span><svg class="lamb lamb-finale"><use href="#sheep-face"/></svg><span class="finale-heart">♥</span></div>
+        <div class="final-letter"><div class="letter-stamp" aria-hidden="true">♥</div><p class="letter-salutation">致全世界最聪明的小羊：</p><p>高中时送你回家的那段路，我还记得。高一时在教室走廊寻找你身影的心情，我也还记得。那些平常的瞬间，在我心里一直很珍贵。</p><p>如今想起你，我会惦记你的工作顺不顺利，今天有没有好好吃饭，身体是不是舒服。希望你忙碌时也记得休息，开心时能尽情地笑。</p><p>如果哪天很累，就慢一点。你不用每一天都做到满分；照顾好自己，对我来说就已经很重要。</p><p>往后的普通日子，我也想认真地惦记你。哪怕没有特别的节日，也想问你一句：今天过得好吗？</p><p class="letter-ending">我很想你，也很在乎你。<br>还有好多话想慢慢说给你听。现在，先送你一个大大的拥抱。</p><p class="letter-signature">一直想着你的人 <span>♡</span></p></div>
+        <div class="scene-actions"><button class="primary-button" type="button" id="replay-button">再看一次 <span aria-hidden="true">↺</span></button><p class="button-note">这封信，永远可以重新打开</p></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
