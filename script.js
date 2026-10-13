@@ -26,6 +26,7 @@ const albumTitle = document.getElementById("album-caption-title");
 const albumText = document.getElementById("album-caption-text");
 const albumThumbnails = document.getElementById("album-thumbnails");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const lambVideos = [...document.querySelectorAll("[data-lamb-video]")];
 const albumPhotos = [
   { file: "sky-01.jpg", alt: "夜色中的两位角色与闪烁的光点", title: "夜里的光", caption: "光点把夜色点亮，也把这一刻留在心里。" },
   { file: "sky-02.jpg", alt: "夜色里相对而立的两位角色", title: "刚好的距离", caption: "靠近一点，世界仿佛就安静了一点。" },
@@ -74,9 +75,8 @@ async function tryPlayMusic() {
     if (request !== musicRequest || musicPausedByVisitor) return;
     musicToggle.classList.add("is-awaiting");
     coverMusicHint.classList.add("is-music-awaiting");
-    coverOpenLabel.textContent = "拆开信，让音乐响起";
     coverMusicHint.textContent = error.name === "NotAllowedError"
-      ? "轻点拆信，音乐就会响起 ♫"
+      ? "如果音乐没有响起，点右上角音符 ♫"
       : "音乐暂时没响，点右上角音符再试试";
     updateMusicControl();
   }
@@ -87,6 +87,7 @@ backgroundMusic.addEventListener("pause", updateMusicControl);
 if (hasMusicSource()) {
   musicToggle.hidden = false;
   void tryPlayMusic();
+  window.addEventListener("pageshow", () => { if (backgroundMusic.paused) void tryPlayMusic(); });
   if (/MicroMessenger/i.test(navigator.userAgent)) {
     document.addEventListener("WeixinJSBridgeReady", () => { void tryPlayMusic(); }, { once: true });
     if (window.WeixinJSBridge) void tryPlayMusic();
@@ -110,6 +111,16 @@ musicToggle.addEventListener("click", () => {
   musicPausedByVisitor = false;
   void tryPlayMusic();
 });
+
+function syncSceneVideos() {
+  lambVideos.forEach((video) => {
+    const active = !video.closest(".scene").hidden && !document.hidden && !reduceMotion.matches;
+    if (active) void video.play().catch(() => {});
+    else video.pause();
+  });
+}
+reduceMotion.addEventListener?.("change", syncSceneVideos);
+document.addEventListener("visibilitychange", syncSceneVideos);
 function showAlbumPhoto(index) {
   albumIndex = (index + albumPhotos.length) % albumPhotos.length;
   const photo = albumPhotos[albumIndex];
@@ -159,6 +170,7 @@ function showStep(step, updateHistory = true) {
     scene.hidden = index !== step;
     scene.classList.toggle("is-active", index === step);
   });
+  syncSceneVideos();
   currentStep = step;
   counter.textContent = `${String(step + 1).padStart(2, "0")} / ${String(scenes.length).padStart(2, "0")}`;
   counter.setAttribute("aria-label", `第 ${step + 1} 页，共 ${scenes.length} 页`);
@@ -177,6 +189,7 @@ function showStep(step, updateHistory = true) {
 }
 
 history.replaceState({ step: 0 }, "", location.href);
+syncSceneVideos();
 window.addEventListener("popstate", (event) => {
   const step = Number.isInteger(event.state?.step) ? event.state.step : 0;
   showStep(step, false);
