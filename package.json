@@ -1,0 +1,18 @@
+{
+  "name": "little-sheep-house",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "check": "node scripts/verify-static.mjs",
+    "check:auth": "node scripts/verify-auth.mjs",
+    "generate:invite": "node scripts/generate-invite.mjs",
+    "configure:public": "node scripts/configure-public.mjs",
+    "seed:admin": "node scripts/seed-admin.mjs",
+    "reset:admin": "node scripts/reset-admin-password.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.118.0"
+  }
+}

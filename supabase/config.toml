@@ -1,0 +1,16 @@
+project_id = "little-sheep-house"
+
+[auth]
+site_url = "https://inui-takumi.github.io/little-sheep-house/"
+additional_redirect_urls = ["https://inui-takumi.github.io/little-sheep-house/", "https://inui-takumi.github.io/little-sheep-house/?mode=recovery", "http://127.0.0.1:4173/"]
+enable_signup = true
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/before_user_created"
