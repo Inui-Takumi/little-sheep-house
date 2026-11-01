@@ -1,14 +1,22 @@
 # Little Sheep House 第二版开发交接
 
-> 更新时间：2026-10-30（Asia/Shanghai）
+> 更新时间：2026-11-01（Asia/Shanghai）
 >
 > 发布分支：`main`（开发分支：`codex/supabase-auth`）
 >
 > 开发基线：`c8aeef9 docs: document migrated project workspace`
 >
-> 状态：admin 与本地开发已验证；用户已授权当前版本同步 GitHub `main`。邮件配置待办，第二账号邮件功能保持关闭。
+> 状态：admin 与本地开发已验证；当前功能版本已推送 GitHub `main`，GitHub Pages 登录页已生效。邮件配置待办，第二账号邮件功能保持关闭。
 >
 > 当前工作区：`E:\Little-Sheep-House`
+
+## 2026-11-01 续接状态
+
+- 登录页已将人像替换为卡通绵羊，并将标题改为“全世界最聪明的小羊的网络小屋”；本地页面已查看，静态检查通过。
+- 用户报告已完成 admin 密码重置；本次未再次使用密码验证登录。密码和密钥不得记录在文件或聊天中。
+- 下一步为配置邮件服务。已建议使用 Brevo 免费 SMTP；用户已打开 Brevo 注册页面，账号注册、事务邮件激活、发件人及 SMTP 配置是否完成尚未确认。自有域名情况待用户确认。
+- 在邮件可正常发送并完成验证前，保持 `emailFlowsEnabled: false`；邀请码尚未生成，第二账号尚未创建（云端状态沿用此前记录，需重新核验）。
+- 后续按第 5 节继续：验证邮件、生成并配置邀请码、验证后启用注册，再测试正式站点及手机浏览器。不要使用生产槽位创建临时测试账号。
 
 ## 1. 第二版目标
 
@@ -117,11 +125,20 @@
 
 - admin 登录与本地开发阶段已完成。下一个工作项是配置邮件发送服务。
 - **原“Supabase 默认邮件服务够用”的假设不成立**：官方服务只向项目组织成员发信、每小时 2 封。普通第二账号必须使用自定义 SMTP 或 Send Email Hook。[官方说明](https://supabase.com/docs/guides/auth/testing-auth-flows)
-- 用户已明确选择邮件配置稍后处理。
-- 用户随后授权现版本同步到 GitHub `main`；此授权不要求提前开放邮件功能。
+- 邮件配置工作已恢复；Brevo 注册页面已打开，配置尚待完成。
+- 现版本已同步 GitHub `main`，第二账号邮件功能按约定保持关闭。
 - `emailFlowsEnabled: false`，注册标签隐藏并提示“第二把钥匙正在准备中”。邮件找回暂停，但 admin 可查看手动重置提示。
 - 邀请码尚未生成，私有邀请码配置仍为空；`is_registration_open()` 返回 `false`，槽位 2 未占用。
 - 服务端密钥仅在初始化期间载入会话内存，未保存进文件或输出；后续如需再次初始化应重新从控制台安全读取。
+
+### 已完成的发布（2026-10-30）
+
+- 功能版本提交：[`4840593`](https://github.com/Inui-Takumi/little-sheep-house/commit/48405939faafa60f927bec90a348fd2d138aa7cf)。
+- 本地 `main` 与远端 `origin/main` 在发布后指向同一提交；推送完成时工作区干净。
+- 正式地址：`https://inui-takumi.github.io/little-sheep-house/`，已返回“登录 · 小羊的网络小屋”登录页，HTTP 200。
+- 已逐一核对线上 `index.html`、`home.html`、`auth.js`、`auth-guard.js`、`supabase-client.js`、`supabase-config.js`、`auth.css`、`styles.css`；全部 HTTP 200，内容与发布版本一致（统一换行后比较）。
+- 线上 `emailFlowsEnabled` 仍为 `false`，不会提前开放第二账号注册或邮件找回。
+- 此次发布核验覆盖静态文件；正式网址上的完整登录会话和邮件回跳测试仍需补做。此前真实 Supabase API 与本地浏览器登录测试已通过。
 
 ## 5. 后续执行计划
 
@@ -142,11 +159,10 @@
    - 运行 `npm run generate:invite`。
    - 明文只在最终交付时单独告知用户；仓库和 Supabase 数据库只保存 SHA-256 哈希。
 
-4. **初始化 admin 与邀请码哈希**
+4. **配置邀请码哈希**
    - admin 已存在并验证通过，无需再次重设密码；后续只需配置邀请码哈希。
-   - 通过进程级私有环境变量运行 `npm run seed:admin`。
-   - 创建 `admin@local.little-sheep-house.invalid`，设置 `app_metadata.is_seeded_admin = true`、确认邮箱、槽位 1 资料。
-   - 将邀请码 SHA-256 写入 `private.registration_config`。
+   - 使用仅服务端允许调用的 `configure_registration` RPC，将邀请码 SHA-256 写入 `private.registration_config`。
+   - `npm run seed:admin` 供首次初始化或明确需要重设 admin 时使用，不要为配置邀请码而无意重设已存在的 admin 密码。
    - 不把管理员密码或 secret key放入命令输出、文件或 Git 历史。
 
 5. **后端验证**
@@ -162,6 +178,7 @@
    - 对正式 GitHub Pages 部署后再做一次完整登录测试。
 
 7. **代码整理与发布**
+   - 当前 admin 可用版本已发布，提交 `4840593`；下列步骤用于后续邮件功能完成后的新版本。
    - 删除或保留本地确认截图；`.gitignore` 已排除 `supabase-*-confirmation.png`。
    - 再运行 `npm run check` 和 JS 语法检查。
    - 审查 `git diff`，确认无 secret、默认密码、邀请码明文。
@@ -190,6 +207,7 @@
 - [x] 匿名读资料被拒绝；admin 不能枚举他人资料或修改本人资料。第二账号交叉读取尚待真实第二账号创建。
 - [x] 七幕故事和原有交互完整回归。
 - [x] 320 / 390 / 430 像素完成检查。
+- [x] 当前版本推送 GitHub `main`，正式登录页与八个关键线上文件一致性核对通过。
 - [ ] 真实微信内浏览器和手机系统浏览器检查。
 - [ ] 正式 GitHub Pages、Supabase 会话和邮件跳转均使用正式网址。
 

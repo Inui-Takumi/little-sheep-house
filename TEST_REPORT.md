@@ -41,6 +41,14 @@
 
 截图保存在被 Git 忽略的 `test-results/` 中。
 
+### GitHub 与正式静态文件
+
+- 2026-10-30 已将功能版本 `48405939faafa60f927bec90a348fd2d138aa7cf` 推送到 `main`，本地与远端提交一致。
+- GitHub Pages 正式地址已返回新登录页，HTTP 200。
+- 线上 `index.html`、`home.html`、`auth.js`、`auth-guard.js`、`supabase-client.js`、`supabase-config.js`、`auth.css`、`styles.css` 均为 HTTP 200，内容与发布版本一致（统一换行后比较）。
+- 第二账号邮件功能开关仍为 `false`。
+- 以上为静态发布核验，不等同于正式网址的完整登录和邮件流程回归。
+
 ## 待完成
 
 - 配置 SMTP 或 Send Email Hook。默认邮件服务仅向 Supabase 组织成员发信，用户已选择稍后处理。
@@ -48,6 +56,6 @@
 - 第二账号注册、确认邮件、邮件找回和双方 RLS 交叉读取测试。
 - 使用独立测试数据库验证并发注册；不得为测试消耗生产唯一名额。
 - 真实微信内浏览器与手机系统浏览器。
-- GitHub Pages 正式发布和线上登录、邮件回跳验证。
+- 正式网址完整登录会话和邮件回跳验证；静态发布已完成。
 
-用户已授权将当前版本同步 GitHub `main`；第二账号邮件功能保持关闭。正式发布状态以 GitHub 提交和 Pages 构建结果为准。
+当前功能版本已同步 GitHub `main`，GitHub Pages 登录入口已生效；第二账号邮件功能保持关闭。
