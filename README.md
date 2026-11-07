@@ -8,9 +8,9 @@
 
 > 登录只能拦截正常访问流程。仓库、静态 HTML、照片、动画和音乐仍是公开资源，请勿放入不希望公开的敏感内容。
 
-## 当前进度（2026-11-01）
+## 当前进度（2026-11-07）
 
-登录页已更新为卡通绵羊与新标题。邮件服务仍在准备：已建议 Brevo，注册页面已打开，账号和 SMTP 配置尚未确认完成；第二账号注册与邮件找回继续关闭。详见交接记录。
+登录页已更新为卡通绵羊与新标题。Brevo SMTP 已配置，独立测试项目已验证确认邮件、找回密码和新密码登录；正式项目的第二账号注册与邮件找回继续关闭。邀请码规则和正式邮件流程仍待验证。详见[第三版总结](开发进度/第三版总结.md)。
 
 ### 2026-10-30 基线
 
@@ -18,7 +18,7 @@ admin 已在 Supabase 初始化，本地登录、会话保持、退出和七幕�
 
 功能版本 [`4840593`](https://github.com/Inui-Takumi/little-sheep-house/commit/48405939faafa60f927bec90a348fd2d138aa7cf) 已推送，正式站点登录页已生效，八个关键线上文件与发布内容一致。正式网址完整登录和邮件流程回归仍待完成。
 
-Supabase 默认邮件服务只向项目组织成员发送邮件，不能满足普通第二账号的注册和找回需求。后续必须配置自定义 SMTP 或 Send Email Hook，再验证邮件流程；参见[官方限制说明](https://supabase.com/docs/guides/auth/testing-auth-flows)。完整进度见 `DEVELOPMENT_HANDOFF.md`，验证记录见 `TEST_REPORT.md`。
+Supabase 默认邮件服务只向项目组织成员发送邮件，不能满足普通第二账号的注册和找回需求。已配置自定义 SMTP，正式项目邮件流程仍待验证；参见[官方限制说明](https://supabase.com/docs/guides/auth/testing-auth-flows)。完整进度见[开发交接记录](开发进度/DEVELOPMENT_HANDOFF.md)，历史验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 
 ## 页面与账号规则
 
