@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
+    "dev:test": "node scripts/dev-server.mjs --test-project",
     "check": "node scripts/verify-static.mjs",
     "check:auth": "node scripts/verify-auth.mjs",
+    "check:test-auth": "node scripts/verify-test-auth.mjs",
+    "init:test-admin": "node scripts/initialize-test-admin-interactive.mjs",
     "generate:invite": "node scripts/generate-invite.mjs",
     "configure:public": "node scripts/configure-public.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",

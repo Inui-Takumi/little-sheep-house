@@ -7,3 +7,5 @@ test-results/
 playwright-report/
 *.log
 supabase-*-confirmation.png
+/密钥/
+/Brove/

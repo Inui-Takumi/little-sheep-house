@@ -3,8 +3,8 @@
 export const SUPABASE_CONFIG = Object.freeze({
   url: "https://cjeuimfyuvetfniidrgk.supabase.co",
   publishableKey: "sb_publishable_QR_7DLjo4flxj5pRxRV72A_3Z8Ad6Ko",
-  // SMTP 完成并验证邮件流程后，才开放第二账号注册和邮件找回。
-  emailFlowsEnabled: false
+  // 测试项目的邮件流程已验证；正式项目仍需由受邀住客完成实际邮件验证。
+  emailFlowsEnabled: true
 });
 
 export const ADMIN_LOGIN = Object.freeze({

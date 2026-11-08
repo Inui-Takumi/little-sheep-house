@@ -1,5 +1,22 @@
 # Little Sheep House 第二版开发交接
 
+## 2026-11-08 测试环境续接记录（最新）
+
+- 测试项目 `ldozxltmzdbvfuupqsum` 在控制台显示 Healthy，已有一个邮件测试账号，予以保留。自定义 SMTP 已启用，host 为 `smtp-relay.brevo.com`、端口 587；Site URL 为 `http://127.0.0.1:4174/`，控制台显示没有额外 Redirect URL。
+- 执行前只读 SQL 显示 `public.profiles` 和 `private.registration_config` 均不存在、`auth.users` 有 1 个账号、资料触发器不存在。通过 SQL Editor 手工输入了与首个迁移逻辑对应的 SQL，执行结果显示 `Success. No rows returned`；该方式不是 CLI 迁移记录，不能据此认定 Supabase 迁移历史已登记，也需后续逐项核对数据库对象与仓库迁移一致。
+- 现有账号创建于资料触发器之前，迁移不会自动为其补建资料；不要删除该账号或让它占用小屋槽位，应先核实其行为并制定兼容方案。
+- 第二个管理员初始化迁移曾输入编辑器，但执行操作时浏览器连接超时。用户随后在测试项目运行只读核查，`admin_seed_hash` 列、`prepare_admin_seed(text)` 函数以及包含 `admin_seed_hash` 的触发器函数检查结果均为 `false`。用户随后按要求在测试项目运行仓库中的 `202610300002_admin_bootstrap.sql`，提供的截图显示 `Success. No rows returned`；数据库对象仍待独立核查。不要运行先前编辑器中可能混有两段内容的未知 SQL。
+- 用户报告已在测试项目启用 `Before User Created` Hook。随后运行 `npm run check:test-auth`：注册状态为关闭、匿名读取 `profiles` 被拒绝、匿名调用两个服务端 RPC 被拒绝，错误邀请码被 Hook 拒绝。此结果不覆盖正确邀请码、并发或登录用户资料隔离，也不单独证明 `prepare_admin_seed` 对服务端已可用。
+- 增加本地 `npm run dev:test`：以环境变量提供测试项目 publishable key，服务器只在本地临时返回测试项目配置，浏览器会话与正式配置隔离；缺少 key 时拒绝启动。已验证响应配置与隔离目标，尚未完成真实浏览器认证测试。
+- 增加 `npm run check:test-auth`，固定指向独立测试项目，检查邀请码未配置时的关闭状态、匿名权限及错误邀请码 Hook；缺少测试公开 key 会拒绝启动。语法、缺 key 和上述真实后端检查均已通过。
+- 增加 `node scripts/initialize-test-admin-interactive.mjs`：固定测试项目，提示用户在本机隐藏输入现有测试项目 secret key 与自定测试管理员密码；检查同邮箱账号及槽位 1 均不存在后初始化，并验证登录与资料。脚本不写入密钥，已有管理员时拒绝重置。此前用户的 PowerShell 禁止加载 `npm.ps1`，初始化尚未启动；现改为直接运行 Node，已检查语法、隐藏输入和无效密钥拒绝。正式项目地址拒绝检查也已通过。尚未运行真实初始化；如创建后验证失败，不要盲目重试，先检查账号及槽位。
+- 用户报告测试管理员初始化成功；初始化脚本会验证测试管理员登录和槽位 1。`node scripts/test-two-slots.mjs` 的真实并发测试记录显示两个创建请求分别返回 200 和 500；测试项目 Postgres 日志在同一时刻记录 `house_full_or_invite_invalid`（P0001），随后临时账号删除返回 200。脚本将 SDK 的 500 视为不确定错误而提前停止，尚未运行资料隔离检查或配置用户自设测试邀请码；独立测试项目当前 `is_registration_open()` 为 false。不要把此测试解释为真实邮箱注册或生产环境验证。
+- 用户报告 `node scripts/finish-test-setup.mjs` 成功：该脚本检查已有账号、测试双方资料隔离并清理本次新建的临时账号，然后配置用户自设的测试邀请码。随后公开 API 独立核验 `is_registration_open()` 返回 true，且本地测试页面显示注册入口。用户报告网页注册、邮件确认、第二账号登录、退出、密码找回和使用新密码登录均通过；之后公开 API 独立核验 `is_registration_open()` 已变为 false，本地页面显示住满提示。
+- 本地测试服务已启动于 `http://127.0.0.1:4174/`，返回独立测试项目配置；该服务依赖当前进程，后续需重新检查是否仍运行。测试账号的确认邮件应使用该地址回跳；恢复密码的 redirect allowlist 尚待核查。
+- 本地 `npm run check` 通过。并发请求的数据库拒绝原因已核查；资料隔离及测试站点邮件流程为用户报告通过。正式项目邀请码配置完成后，公开 API 返回注册开放，本地前端开关已开启；正式环境实际邮件送达和受邀账号完整流程仍待真实住客验证。
+- 正式项目控制台只读检查：自定义 SMTP 开启（Brevo、587），Site URL 指向 GitHub Pages，根地址及 `?mode=recovery` 已在回跳列表，`Before User Created` Hook 显示启用；用户列表显示管理员。公开 API 返回注册关闭，线上 `index.html` 与 `supabase-config.js` 返回 200 且与本地一致，邮件功能开关仍为 false。用户报告正式管理员网页登录与退出通过。SMTP 在正式项目的真实邮件送达尚未验证。
+- 用户报告 `scripts/configure-production-invite.mjs` 执行成功并已私下保存邀请码。程序固定正式项目、检查前端关闭、管理员凭据、账号列表、槽位和注册状态后生成邀请码并写入哈希；随后公开 API 独立核验注册开放。邀请码明文未写入仓库。
+
 > 更新时间：2026-11-07（Asia/Shanghai）
 >
 > 发布分支：`main`（开发分支：`codex/supabase-auth`）

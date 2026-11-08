@@ -9,7 +9,9 @@ export const supabase = isSupabaseConfigured
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storageKey: "little-sheep-house-auth"
+        storageKey: SUPABASE_CONFIG.url === "https://ldozxltmzdbvfuupqsum.supabase.co"
+          ? "little-sheep-house-auth-test"
+          : "little-sheep-house-auth"
       }
     })
   : null;
