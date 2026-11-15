@@ -39,6 +39,9 @@ if (existing) {
   if (error) throw new Error(`更新 admin 失败：${error.message}`);
   adminId = data.user.id;
 } else {
+  const { data: occupied, error: slotError } = await client.from("profiles").select("id").eq("slot", 1).maybeSingle();
+  if (slotError) throw new Error("无法检查管理员槽位，已停止初始化。");
+  if (occupied) throw new Error("管理员槽位已被占用；请勿重新初始化账号。");
   // Auth may insert auth.users before applying app_metadata. Use a private,
   // one-use random bootstrap proof rather than trusting client-editable metadata.
   const seedHash = randomBytes(32).toString("hex");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomInt } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_CONFIG, ADMIN_LOGIN } from "../supabase-config.js";
+import { SUPABASE_CONFIG } from "../supabase-config.js";
 import { readHidden } from "./read-hidden.mjs";
 
 const production = "https://cjeuimfyuvetfniidrgk.supabase.co";
@@ -15,12 +15,13 @@ try {
   assert.equal(SUPABASE_CONFIG.url, production, "本地公开配置不是预期的正式项目");
   assert.equal(SUPABASE_CONFIG.emailFlowsEnabled, false, "前端开关不是预期的关闭状态");
   const secret = (await readHidden("输入正式项目现有的 secret key（输入不显示）")).trim();
+  const adminEmail = (await readHidden("输入正式管理员邮箱（输入不显示）")).trim().toLowerCase();
   const password = await readHidden("输入正式管理员密码（输入不显示）");
   assert.ok(secret.startsWith("sb_secret_"), "需要正式项目 secret key");
   const service = createClient(production, secret, options);
   const user = createClient(production, SUPABASE_CONFIG.publishableKey, options);
   const anonymous = createClient(production, SUPABASE_CONFIG.publishableKey, options);
-  const login = await user.auth.signInWithPassword({ email: ADMIN_LOGIN.authEmail, password });
+  const login = await user.auth.signInWithPassword({ email: adminEmail, password });
   check(!login.error && !!login.data.session, "正式管理员登录成功");
   const profile = await service.from("profiles").select("id, slot");
   check(!profile.error && profile.data.length === 1 && profile.data[0].slot === 1 && profile.data[0].id === login.data.user.id,

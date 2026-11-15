@@ -1,4 +1,4 @@
-import { ADMIN_LOGIN, SUPABASE_CONFIG } from "./supabase-config.js";
+import { SUPABASE_CONFIG } from "./supabase-config.js";
 import { isSupabaseConfigured, siteRootUrl, supabase } from "./supabase-client.js";
 
 const panels = {
@@ -65,8 +65,7 @@ function setServiceUnavailable() {
 }
 
 function normalizeLogin(identifier) {
-  const value = identifier.trim().toLowerCase();
-  return value === ADMIN_LOGIN.alias ? ADMIN_LOGIN.authEmail : value;
+  return identifier.trim().toLowerCase();
 }
 
 async function hashInvite(invite) {
@@ -194,7 +193,6 @@ registerForm.addEventListener("submit", async (event) => {
   const gender = new FormData(registerForm).get("gender");
 
   if (!nickname) return showMessage("请填写昵称。", "error");
-  if (email === ADMIN_LOGIN.authEmail) return showMessage("请使用你的真实邮箱注册。", "error");
   if (password.length < 8) return showMessage("密码至少需要 8 位。", "error");
   if (password !== confirmPassword) return showMessage("两次输入的密码不一致。", "error");
   if (!/^SHEEP-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(invite)) {
@@ -246,10 +244,6 @@ forgotForm.addEventListener("submit", async (event) => {
   clearMessage();
   if (!forgotForm.reportValidity()) return;
   const identifier = document.getElementById("forgot-identifier").value.trim().toLowerCase();
-  if (identifier === ADMIN_LOGIN.alias || identifier === ADMIN_LOGIN.authEmail) {
-    showMessage("admin 没有绑定收件邮箱，请在 Supabase 后台手动重置密码。", "info");
-    return;
-  }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
     showMessage("请输入注册时使用的真实邮箱。", "error");
     return;
