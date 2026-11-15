@@ -25,8 +25,9 @@ try {
   check(wrong.error?.code === "invalid_credentials", "错误密码被统一拒绝");
   const login = await user.auth.signInWithPassword({ email, password });
   check(!login.error && Boolean(login.data.session), "admin 真实密码登录成功");
+  check(login.data.user?.app_metadata?.is_seeded_admin === true, "登录账号具有管理员标记");
   const profile = await user.from("profiles").select("id, slot, nickname, gender").single();
-  check(!profile.error && profile.data.slot === 1 && profile.data.nickname === "全世界最聪明的小羊" && profile.data.gender === "女", "admin 只能读取自己的槽位一资料");
+  check(!profile.error && profile.data.id === login.data.user.id && [1, 2].includes(profile.data.slot) && Boolean(profile.data.nickname), "管理员只能读取自己的资料");
   const other = await user.from("profiles").select("id").neq("id", login.data.user.id);
   check(!other.error && other.data.length === 0, "登录客户端无法枚举其他资料");
   const update = await user.from("profiles").update({ nickname: profile.data.nickname }).eq("id", login.data.user.id);

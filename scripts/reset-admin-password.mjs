@@ -12,11 +12,17 @@ if (password.length < 8) throw new Error("ADMIN_PASSWORD 至少需要 8 位。")
 const client = createClient(url, secretKey, {
   auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
 });
-const { data: profile, error: profileError } = await client.from("profiles").select("id, slot").eq("slot", 1).maybeSingle();
-if (profileError || !profile?.id) throw new Error("无法确认管理员槽位。");
-const { data, error: userError } = await client.auth.admin.getUserById(profile.id);
-const admin = data?.user;
-if (userError || admin?.id !== profile.id || admin.app_metadata?.is_seeded_admin !== true) throw new Error("没有找到可信的 admin 初始化账号。");
+const admins = [];
+for (let page = 1; ; page++) {
+  const { data, error } = await client.auth.admin.listUsers({ page, perPage: 100 });
+  if (error) throw new Error("无法读取账号列表。");
+  admins.push(...data.users.filter((user) => user.app_metadata?.is_seeded_admin === true));
+  if (data.users.length < 100) break;
+}
+if (admins.length !== 1) throw new Error("无法确认唯一的管理员账号。");
+const admin = admins[0];
+const { data: profile, error: profileError } = await client.from("profiles").select("id, slot").eq("id", admin.id).maybeSingle();
+if (profileError || profile?.id !== admin.id || ![1, 2].includes(profile.slot)) throw new Error("无法确认管理员资料。");
 
 const { error } = await client.auth.admin.updateUserById(admin.id, { password });
 if (error) throw new Error(`重置密码失败：${error.message}`);
