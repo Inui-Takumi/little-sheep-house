@@ -91,7 +91,7 @@ async function goHomeIfSignedIn() {
   const { data } = await supabase.auth.getSession();
   if (!data.session || recoveryMode) return false;
   if (await hasValidProfile()) {
-    window.location.replace("./home.html");
+    window.location.replace("./house.html");
     return true;
   }
   await supabase.auth.signOut();
@@ -168,7 +168,7 @@ loginForm.addEventListener("submit", async (event) => {
       showMessage("登录失败，请检查账号或密码。", "error");
       return;
     }
-    window.location.replace("./home.html");
+    window.location.replace("./house.html");
   } catch {
     showMessage("暂时连不上小屋，请检查网络后重试。", "error");
   } finally {

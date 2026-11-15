@@ -18,7 +18,7 @@ export const SUPABASE_CONFIG = Object.freeze({
 export const ADMIN_LOGIN = Object.freeze({ alias: "admin", authEmail: "admin@local.little-sheep-house.invalid" });
 export function hasSupabaseConfig() { return true; }
 ` : null;
-const files = new Set(["index.html", "home.html", "auth.js", "auth-guard.js", "supabase-client.js", "supabase-config.js", "script.js", "auth.css", "styles.css", "background-music.mp3"]);
+const files = new Set(["index.html", "home.html", "house.html", "house.css", "house.js", "auth.js", "auth-guard.js", "supabase-client.js", "supabase-config.js", "script.js", "auth.css", "styles.css", "background-music.mp3"]);
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".jpg": "image/jpeg", ".mp4": "video/mp4", ".mp3": "audio/mpeg" };
 const server = createServer(async (req, res) => {
   try {

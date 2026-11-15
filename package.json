@@ -7,6 +7,7 @@
     "dev": "node scripts/dev-server.mjs",
     "dev:test": "node scripts/dev-server.mjs --test-project",
     "check": "node scripts/verify-static.mjs",
+    "check:house-db": "node scripts/test-house-db.mjs",
     "check:auth": "node scripts/verify-auth.mjs",
     "check:test-auth": "node scripts/verify-test-auth.mjs",
     "init:test-admin": "node scripts/initialize-test-admin-interactive.mjs",
@@ -17,5 +18,9 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "playwright-core": "1.62.1"
   }
 }
