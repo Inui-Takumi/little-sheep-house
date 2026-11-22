@@ -23,7 +23,7 @@ try {
     grant select,insert,delete on storage.objects to authenticated;
     create function storage.foldername(text) returns text[] language sql as $$ select (string_to_array($1,'/'))[1:array_length(string_to_array($1,'/'),1)-1] $$;
   `);
-  for (const file of ["202611150003_shared_house.sql", "202611150004_house_collections.sql", "202611150005_house_surprises.sql"]) {
+  for (const file of ["202611150003_shared_house.sql", "202611150004_house_collections.sql", "202611150005_house_surprises.sql", "202611220006_house_diary.sql"]) {
     await db.exec(await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8"));
   }
   await as(first);
@@ -66,6 +66,51 @@ try {
   await db.query("update house_capsules set opens_at=now()-interval '1 second' where id=$1", [capsule]);
   await as(second);
   assert.equal((await db.query("select house_open_capsule($1) body", [capsule])).rows[0].body, "secret");
+
+  const privateId = "00000000-0000-0000-0000-000000000011";
+  const sharedId = "00000000-0000-0000-0000-000000000012";
+  const testBody = "今天写下一句。\n<em>下一行</em>";
+  const byId = "select author_id, body, version, font from house_diary_entries where id=$1";
+  await as(first);
+  await db.query("insert into house_diary_entries(id,body,font) values ($1,$2,'maocao')", [privateId, testBody]);
+  await db.query("insert into house_diary_entries(id,body,visibility,seal) values ($1,'shared','shared','moon')", [sharedId]);
+  await denied("insert into house_diary_entries(id,body) values ($1,$2)", [privateId, testBody]);
+  await denied("insert into house_diary_entries(id,author_id,body) values (gen_random_uuid(),$1,'author forgery')", [second]);
+  await denied("insert into house_diary_entries(id,body,visibility) values (gen_random_uuid(),'text','internet')");
+  await denied("insert into house_diary_entries(id,body,font) values (gen_random_uuid(),'text','arbitrary-css')");
+  await denied("insert into house_diary_entries(id,body) values (gen_random_uuid(),$1)", [" \n\t "]);
+  const own = (await db.query(byId, [privateId])).rows[0];
+  assert.equal(own.body, testBody);
+  assert.equal(own.author_id, first);
+  assert.equal(own.font, "maocao");
+  await as(second);
+  assert.equal((await db.query(byId, [privateId])).rows.length, 0);
+  assert.equal((await db.query(byId, [sharedId])).rows[0].body, "shared");
+  assert.equal((await db.query("update house_diary_entries set body='other' where id=$1 returning id", [sharedId])).rows.length, 0);
+  assert.equal((await db.query("delete from house_diary_entries where id=$1 returning id", [privateId])).rows.length, 0);
+  assert.equal((await db.query("delete from house_diary_entries where id=$1 returning id", [sharedId])).rows.length, 0);
+  await as(first);
+  const publish = (await db.query("update house_diary_entries set visibility='shared' where id=$1 and version=1 returning version", [privateId])).rows;
+  assert.equal(Number(publish[0].version), 2);
+  await denied("update house_diary_entries set author_id=$1 where id=$2", [second, privateId]);
+  const stale = await db.query("update house_diary_entries set body='stale' where id=$1 and version=1 returning id", [privateId]);
+  assert.equal(stale.rows.length, 0);
+  await as(second);
+  assert.equal((await db.query(byId, [privateId])).rows[0].body, testBody);
+  await as(first);
+  await db.query("update house_diary_entries set visibility='private' where id=$1", [privateId]);
+  await as(second);
+  assert.equal((await db.query(byId, [privateId])).rows.length, 0);
+  await as(outsider);
+  assert.equal((await db.query("select id from house_diary_entries")).rows.length, 0);
+  await denied("insert into house_diary_entries(id,body) values (gen_random_uuid(),'outsider')");
+  await db.exec("reset role; set role anon");
+  await denied("select id,body from house_diary_entries");
+  await as(first);
+  assert.equal((await db.query("delete from house_diary_entries where id=$1 returning id", [sharedId])).rows.length, 1);
+  await as(second);
+  assert.equal((await db.query(byId, [sharedId])).rows.length, 0);
+  console.log("日记：两位住客、非住客、匿名、并发版本及公开/私密切换权限通过");
   console.log("共享权限、私有照片规则、时光信件及双人问答：本机数据库测试通过");
 } finally {
   await db.close();

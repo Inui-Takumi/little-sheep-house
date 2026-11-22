@@ -1,8 +1,15 @@
 import { isSupabaseConfigured, supabase } from "./supabase-client.js";
+import { createHouseEffects } from "./house-effects.js";
+import { createHouseDiary } from "./house-diary.js";
 
 const $ = (id) => document.getElementById(id);
 let user, members = new Map(), notes = [], likes = [], dates = [], quotes = [], items = [];
 let calendarMonth = null;
+let activePanel, pendingNotesRead;
+let activityReady = false;
+let recallHistory, drawnWishId;
+const activitySources = new Set();
+const itemKinds = { memory:"回忆", wish:"愿望", song:"歌曲", task:"待办", mood:"心情" };
 const fallbacks = ["你在的日子，平常也闪闪发光。", "今天也要记得，好好照顾自己。", "有你一起，日子就有了期待。"];
 const status = (message) => { $("status").textContent = message; };
 const node = (tag, value, cls) => { const e = document.createElement(tag); if (value != null) e.textContent = value; if (cls) e.className = cls; return e; };
@@ -19,6 +26,80 @@ function nextOccurrence(row) {
 function anniversaryInYear(monthDay,year) { return monthDay === "02-29" && new Date(Date.UTC(year,1,29)).getUTCMonth() !== 1 ? `${year}-02-28` : `${year}-${monthDay}`; }
 function must(result) { if (result.error) throw result.error; return result.data; }
 function report(error) { console.error("House request failed", error?.code || error?.status || "unknown"); status(error?.code === "23505" ? "这条记录已经存在，请刷新后重试；在一起的第一天只能设置一次。" : "暂时无法完成操作，请检查网络后重试。"); }
+
+const houseContent = $("house-content");
+const panels = new Map(Array.from(houseContent.children, (panel) => [`#${panel.id}`, panel]));
+const navLinks = document.querySelectorAll(".house-nav a");
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const lamb = $("house-lamb");
+const houseEffects = createHouseEffects($("house"), reduceMotion);
+const diary = createHouseDiary({ supabase, nameOf, status });
+
+function updateLamb() {
+  if ($("house").hidden || activePanel !== $("overview") || document.hidden || reduceMotion.matches) {
+    lamb.pause();
+    return;
+  }
+  if (!lamb.hasAttribute("src")) lamb.src = lamb.dataset.src;
+  if (!lamb.ended) void lamb.play().catch(() => {});
+}
+
+reduceMotion.addEventListener("change", updateLamb);
+document.addEventListener("visibilitychange", updateLamb);
+
+async function markNotesRead() {
+  if (activePanel !== $("notes") || !pendingNotesRead) return;
+  const { seenAt, hasPreviousRead } = pendingNotesRead;
+  pendingNotesRead = null;
+  try {
+    const reads = supabase.from("house_reads");
+    if (hasPreviousRead) {
+      must(await reads.update({ notes_seen_at: seenAt }).eq("user_id", user.id).lt("notes_seen_at", seenAt));
+    } else {
+      must(await reads.upsert({ user_id: user.id, notes_seen_at: seenAt }, { ignoreDuplicates: true }));
+    }
+    $("nav-unread").hidden = true;
+    $("notes-link").removeAttribute("aria-label");
+  } catch (error) {
+    pendingNotesRead = { seenAt, hasPreviousRead };
+    console.error("Unable to mark notes read", error?.code || error?.status || "unknown");
+  }
+}
+
+function showPanel(fragment, moveFocus = false) {
+  const panel = panels.get(fragment) ?? $("overview");
+  if (panel === activePanel) return;
+  activePanel = panel;
+  for (const entry of panels.values()) entry.hidden = entry !== panel;
+  for (const link of navLinks) {
+    if (link.hash === `#${panel.id}`) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  houseContent.scrollTop = 0;
+  if (moveFocus) {
+    const heading = panel.querySelector("h1, h2");
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  }
+  updateLamb();
+  if (panel === $("activity")) refreshActivity();
+  if (panel === $("capsules")) void diary.refreshList();
+  void markNotesRead();
+}
+
+$("house").addEventListener("click", (event) => {
+  const link = event.target.closest('a[href^="#"]');
+  if (!link || !panels.has(link.hash) || event.button !== 0 ||
+      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  event.preventDefault();
+  if (location.hash !== link.hash && panels.get(link.hash) !== activePanel) {
+    history.pushState(null, "", link.hash);
+  }
+  showPanel(link.hash, true);
+  if (link.dataset.record) focusRecord(link.dataset.record);
+});
+window.addEventListener("hashchange", () => showPanel(location.hash, !$("house").hidden));
+
 async function run(form, task) {
   const buttons = form.querySelectorAll("button"); buttons.forEach((b) => b.disabled = true);
   status("");
@@ -31,12 +112,168 @@ function action(label, handler) {
   return button;
 }
 function timestamp(value) { return new Intl.DateTimeFormat("zh-CN", { timeZone:"Asia/Shanghai", year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" }).format(new Date(value)); }
+
+function focusRecord(id) {
+  const record = $(id);
+  if (!record) return;
+  record.tabIndex = -1;
+  record.focus({ preventScroll: true });
+  record.scrollIntoView({ block: "nearest" });
+}
+
+function activityRow({ mark, description, title, date, dateLabel, section, record }) {
+  const row = node("article", null, "activity-row");
+  const symbol = node("span", mark, "activity-mark");
+  symbol.setAttribute("aria-hidden", "true");
+  const copy = node("div", null, "activity-copy");
+  const time = node("time", dateLabel);
+  time.dateTime = date;
+  const text = node("p", null, "activity-title");
+  if (record) {
+    const link = node("a", title);
+    link.href = `#${section}`;
+    link.dataset.record = record;
+    text.append(link);
+  } else {
+    text.textContent = title;
+  }
+  copy.append(node("p", description, "activity-description"), text, time);
+  row.append(symbol, copy);
+  return row;
+}
+
+function renderActivity() {
+  const target = $("activity-list");
+  const filter = $("activity-filter").value;
+  const entries = [
+    ...notes.map((note) => ({
+      section: "notes", record: `note-${note.id}`, mark: "♡", title: note.body, date: note.created_at,
+      description: `${nameOf(note.author_id)} · ${note.parent_id ? "回复" : "留言"}`
+    })),
+    ...items.map((item) => ({
+      section: "collections", record: `item-${item.id}`, mark: "✿", title: item.title, date: item.created_at,
+      description: `${nameOf(item.author_id)} · ${itemKinds[item.kind]}`
+    })),
+    ...dates.map((date) => ({
+      section: "dates", record: `date-${date.id}`, mark: "✳", title: date.title, date: date.created_at,
+      description: `${nameOf(date.created_by)} · 记下了一个日子`
+    }))
+  ].filter((entry) => entry.date && (filter === "all" || entry.section === filter));
+  entries.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  const rows = entries.slice(0, 16).map((entry) => activityRow({
+    ...entry, dateLabel: timestamp(entry.date)
+  }));
+  if (!activityReady) rows.push(node("p", "正在读取小屋里的记录…", "empty"));
+  else if (filter === "all" ? activitySources.size < 3 : !activitySources.has(filter)) {
+    rows.push(node("p", "部分记录暂时无法加载，请稍后刷新。", "empty"));
+  } else if (!rows.length) {
+    const empty = node("div", null, "empty empty-notes");
+    const link = node("a", { all:"写张纸条", notes:"写张纸条", collections:"添加收藏", dates:"记下一个日子" }[filter], "text-link");
+    link.href = filter === "all" ? "#notes" : `#${filter}`;
+    empty.append(node("p", "这里还没有记录。"), link);
+    rows.push(empty);
+  }
+  target.replaceChildren(...rows);
+}
+
+async function loadDatedMemories() {
+  // The collection view loads the newest 100 items. Search the older records as well.
+  if (items.length < 100) return items.filter((item) => item.kind === "memory" && item.event_date);
+  const memories = [];
+  const pageSize = 500;
+  for (let start = 0; ; start += pageSize) {
+    const page = must(await supabase.from("house_items").select("title,event_date,author_id")
+      .eq("kind", "memory").not("event_date", "is", null).order("id").range(start, start + pageSize - 1));
+    memories.push(...page);
+    if (page.length < pageSize) return memories;
+  }
+}
+
+async function renderRecall() {
+  const target = $("recall-list");
+  if (!activityReady) {
+    target.replaceChildren(node("p", "正在翻找以前的回忆…", "empty"));
+    return;
+  }
+  const history = recallHistory ??= loadDatedMemories();
+  try {
+    const memories = await history;
+    if (history !== recallHistory) return;
+    const now = today();
+    const match = (value) => value && value < now && value.slice(5) === now.slice(5);
+    const entries = [
+      ...memories.map((memory) => ({
+        mark:"✿", title:memory.title, date:memory.event_date, description:`${nameOf(memory.author_id)} · 回忆`
+      })),
+      ...dates.map((date) => ({
+        mark:"✳", title:date.title, date:date.event_date, description:"我们记下的日子"
+      }))
+    ].filter((entry) => match(entry.date)).sort((a, b) => b.date.localeCompare(a.date));
+    const rows = entries.map((entry) => activityRow({ ...entry, dateLabel:entry.date }));
+    if (!activitySources.has("collections") || !activitySources.has("dates")) {
+      rows.push(node("p", "部分回忆暂时无法加载，请稍后刷新。", "empty"));
+    } else if (!rows.length) {
+      const empty = node("div", null, "empty empty-recall");
+      const link = node("a", "收藏一段回忆", "text-link");
+      link.href = "#collections";
+      empty.append(node("p", "以前的今天还没有回忆。给新收藏填上日期，以后就能在这里重温。"), link);
+      rows.push(empty);
+    }
+    target.replaceChildren(...rows);
+  } catch (error) {
+    if (history !== recallHistory) return;
+    recallHistory = null;
+    console.error("Recall unavailable", error?.code || error?.status || "unknown");
+    target.replaceChildren(node("p", "往年今日暂时无法加载，请稍后再试。", "empty"));
+  }
+}
+
+function refreshActivity() {
+  renderActivity();
+  void renderRecall();
+}
+
+function openWishes() {
+  return items.filter((item) => item.kind === "wish" && !item.completed);
+}
+
+function renderWishDraw() {
+  const wishes = openWishes();
+  const drawn = wishes.find((wish) => wish.id === drawnWishId);
+  drawnWishId = drawn?.id;
+  $("draw-wish").disabled = !wishes.length;
+  $("draw-wish").textContent = drawn ? "再抽一张" : "抽一张";
+  $("view-wish").hidden = !drawn;
+  $("wish-result").textContent = drawn ? drawn.title : wishes.length
+    ? "从还没完成的愿望里随机挑一件。"
+    : "还没有待完成的愿望。添加收藏时选择「愿望」，就可以来抽签。";
+}
+
+$("activity-filter").addEventListener("change", renderActivity);
+$("draw-wish").addEventListener("click", () => {
+  const wishes = openWishes();
+  const choices = wishes.length > 1 ? wishes.filter((wish) => wish.id !== drawnWishId) : wishes;
+  if (!choices.length) return;
+  drawnWishId = choices[Math.floor(Math.random() * choices.length)].id;
+  renderWishDraw();
+  if (!reduceMotion.matches) {
+    $("wish-result").animate?.(
+      [{ opacity: 0.55, transform: "translateY(4px)" }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 260, easing: "ease-out" }
+    );
+  }
+});
+$("view-wish").addEventListener("click", () => {
+  focusRecord(`item-${drawnWishId}`);
+});
+
 function renderNotes() {
   const list = $("notes-list"); list.replaceChildren();
   const top = notes.filter((n) => !n.parent_id);
-  if (!top.length) list.append(node("p", "还没有纸条，留下一句今天想说的话吧。", "empty"));
+  if (!top.length) list.append(node("p", "还没有纸条，留下一句今天想说的话吧。", "empty empty-notes"));
   function card(note, reply = false) {
     const wrapper = node("article", null, "note");
+    wrapper.id = `note-${note.id}`;
     const meta = node("div", null, "note-meta"); meta.append(node("strong", nameOf(note.author_id)), node("time", timestamp(note.created_at)));
     wrapper.append(meta, node("p", note.body, "note-body"));
     const controls = node("div", null, "note-actions");
@@ -79,9 +316,10 @@ function renderDates() {
   const upcoming = dates.filter((d)=>d.kind !== "together").map((d)=>({...d,next:nextOccurrence(d)})).filter((d)=>d.next >= today()).sort((a,b)=>a.next.localeCompare(b.next));
   $("next-date").textContent = upcoming[0]?.title || "还没有安排";
   $("next-date-hint").textContent = upcoming[0] ? (daysBetween(today(),upcoming[0].next) === 0 ? "就是今天 ♡" : `还有 ${daysBetween(today(),upcoming[0].next)} 天 · ${upcoming[0].next}`) : "一起把想见面的日子写下来吧。";
-  if (!dates.length) list.append(node("p","还没有记录，写下第一个属于你们的日子吧。","empty"));
+  if (!dates.length) list.append(node("p","还没有记录，写下第一个属于你们的日子吧。","empty empty-dates"));
   dates.forEach((row)=>{
     const line=node("div",null,"date-row"), copy=node("div"), actions=node("div",null,"date-actions");
+    line.id = `date-${row.id}`;
     copy.append(node("strong",row.title),node("small",`${row.event_date} · ${({together:"在一起",anniversary:"每年纪念日",event:"一次性计划"})[row.kind]}`));
     actions.append(action("编辑",async()=>{
       const title=prompt("日子名称：",row.title); if(title===null)return;
@@ -93,8 +331,13 @@ function renderDates() {
   });
   renderCalendar();
 }
-async function loadNotes() { const [n,l]=await Promise.all([supabase.from("house_notes").select("*").order("created_at",{ascending:false}).limit(200),supabase.from("house_likes").select("*")]);notes=must(n);likes=must(l);renderNotes(); }
-async function loadDates() { dates=must(await supabase.from("house_dates").select("*").order("event_date"));renderDates(); }
+function updateActivitySource(source) {
+  activitySources.add(source);
+  if (activityReady && activePanel === $("activity")) refreshActivity();
+}
+
+async function loadNotes() { const [n,l]=await Promise.all([supabase.from("house_notes").select("*").order("created_at",{ascending:false}).limit(200),supabase.from("house_likes").select("*")]);notes=must(n);likes=must(l);renderNotes();updateActivitySource("notes"); }
+async function loadDates() { dates=must(await supabase.from("house_dates").select("*").order("event_date"));renderDates();updateActivitySource("dates"); }
 async function loadQuotes() {
   quotes=must(await supabase.from("house_quotes").select("id,author_id,body").order("created_at"));
   const all=[...fallbacks,...quotes.map((q)=>q.body)];$("daily-quote").textContent=all[Math.floor(dateValue(today())/86400000)%all.length];
@@ -103,13 +346,17 @@ async function loadQuotes() {
 }
 async function loadItems() {
   items=must(await supabase.from("house_items").select("*").order("created_at",{ascending:false}).limit(100));
+  recallHistory = null;
+  updateActivitySource("collections");
+  renderWishDraw();
   const list=$("items-list");list.replaceChildren();
   renderCalendar();renderAchievements();
-  if(!items.length){list.append(node("p","这里还空着，收藏第一个小小的瞬间吧。","empty"));return;}
+  if(!items.length){list.append(node("p","这里还空着，收藏第一个小小的瞬间吧。","empty empty-collections"));return;}
   for(const item of items){
     const card=node("article",null,"item-card");
+    card.id = `item-${item.id}`;
     if(item.image_path){const image=node("img");image.alt=item.title;image.loading="lazy";const signed=await supabase.storage.from("house-memories").createSignedUrl(item.image_path,300);if(!signed.error){image.src=signed.data.signedUrl;const link=node("a");link.href=signed.data.signedUrl;link.target="_blank";link.rel="noopener noreferrer";link.setAttribute("aria-label",`查看照片：${item.title}`);link.append(image);card.append(link);}else card.append(node("p","照片暂时无法加载"));}
-    card.append(node("small",`${({memory:"回忆",wish:"愿望",song:"歌曲",task:"待办",mood:"心情"})[item.kind]} · ${nameOf(item.author_id)}${item.event_date ? ` · ${item.event_date}` : ""}`),node("h3",item.title));
+    card.append(node("small",`${itemKinds[item.kind]} · ${nameOf(item.author_id)}${item.event_date ? ` · ${item.event_date}` : ""}`),node("h3",item.title));
     if(item.body)card.append(node("p",item.body));
     if(item.url){try{const url=new URL(item.url);if(["http:","https:"].includes(url.protocol)){const link=node("a","打开链接 ↗");link.href=url.href;link.target="_blank";link.rel="noopener noreferrer";card.append(link);}}catch{}}
     const controls=node("div",null,"note-actions");
@@ -151,18 +398,6 @@ function renderCalendar(){
     grid.append(cell);
   }
 }
-async function loadCapsules() {
-  const capsules=must(await supabase.from("house_capsules").select("*").order("created_at",{ascending:false}).limit(100));
-  const list=$("capsules-list");list.replaceChildren();
-  if(!capsules.length)list.append(node("p","还没有信，给未来留一点惊喜吧。","empty"));
-  for(const capsule of capsules){
-    const card=node("article",null,"note");card.append(node("div",`✉  ${capsule.title}`,"card-kicker"),node("p",`${nameOf(capsule.author_id)} 写给 ${nameOf(capsule.recipient_id)} · ${timestamp(capsule.opens_at)} 开启`));
-    if(capsule.author_id===user.id || new Date(capsule.opens_at)<=new Date()){const open=action("打开信",async()=>{const body=must(await supabase.rpc("house_open_capsule",{p_id:capsule.id}));card.append(node("p",body,"note-body"));open.hidden=true;});card.append(open);}
-    else card.append(node("small","信还在安静地等那一天。"));
-    if(capsule.author_id===user.id)card.append(action("删除",async()=>{if(!confirm("删除这封信？"))return;must(await supabase.from("house_capsules").delete().eq("id",capsule.id));await loadCapsules();}));
-    list.append(card);
-  }
-}
 async function loadAnswers(){
   const question=$("question-choice").value;
   const answers=must(await supabase.rpc("house_question_answers",{p_question:question}));
@@ -177,19 +412,36 @@ async function boot() {
   const profile = await supabase.from("profiles").select("nickname,slot").eq("id",user.id).maybeSingle();
   if (profile.error || !profile.data || ![1,2].includes(profile.data.slot)) { window.location.replace("./index.html?error=profile"); return; }
   $("current-name").textContent=profile.data.nickname;
+  showPanel(location.hash);
   $("house").hidden=false; $("loading").hidden=true; document.documentElement.classList.remove("house-locked");
+  houseEffects.setVisible(true);
+  diary.connect(user.id);
+  updateLamb();
   try {
     members = new Map(must(await supabase.rpc("house_members")).map((m)=>[m.id,m.nickname]));
+    if (activePanel === $("capsules")) void diary.refreshList();
     const seen=must(await supabase.from("house_reads").select("notes_seen_at").eq("user_id",user.id).maybeSingle());
+    const seenAt = new Date().toISOString();
     await Promise.all([loadNotes(),loadDates(),loadQuotes()]);
     const unread=notes.filter((n)=>n.author_id!==user.id && (!seen || n.created_at > seen.notes_seen_at)).length;
-    if(unread){$("unread").textContent=`${unread} 条新纸条`;$("unread").hidden=false;}
-    const now=new Date().toISOString();
-    if(seen) must(await supabase.from("house_reads").update({notes_seen_at:now}).eq("user_id",user.id));
-    else must(await supabase.from("house_reads").insert({user_id:user.id,notes_seen_at:now}));
+    if(unread){
+      $("unread").textContent=`${unread} 条新纸条`;
+      $("unread").hidden=false;
+      $("nav-unread").textContent=unread;
+      $("notes-link").setAttribute("aria-label", `留言，${unread} 条新纸条`);
+      $("nav-unread").hidden=false;
+    }
+    pendingNotesRead = { seenAt, hasPreviousRead: Boolean(seen) };
+    void markNotesRead();
   } catch(e) { console.error("House setup unavailable",e?.code || e?.status || "unknown"); status("小屋日常功能暂时不可用，请稍后重试；你仍可以打开我们的故事。"); }
-  try { await loadItems(); } catch(e) { console.error("Collections unavailable",e?.code || e?.status || "unknown"); $("items-list").replaceChildren(node("p","收藏功能暂时不可用，请稍后再来。","empty")); }
-  try { await Promise.all([loadCapsules(),loadAnswers()]); } catch(e) { console.error("Surprises unavailable",e?.code || e?.status || "unknown"); $("capsules-list").replaceChildren(node("p","信箱暂时不可用，请稍后再来。","empty")); }
+  try { await loadItems(); } catch(e) {
+    console.error("Collections unavailable",e?.code || e?.status || "unknown");
+    $("items-list").replaceChildren(node("p","收藏功能暂时不可用，请稍后再来。","empty"));
+    $("wish-result").textContent = "愿望暂时无法加载，请稍后刷新。";
+  }
+  activityReady = true;
+  if (activePanel === $("activity")) refreshActivity();
+  try { await loadAnswers(); } catch(e) { console.error("Questions unavailable",e?.code || e?.status || "unknown"); $("question-results").replaceChildren(node("p","暂时无法查看回答，请稍后再试。","empty")); }
 }
 $("logout").addEventListener("click",async()=>{await supabase.auth.signOut();window.location.replace("./index.html");});
 $("note-form").addEventListener("submit",(e)=>{e.preventDefault();run(e.currentTarget,async()=>{const body=$("note-body").value.trim();if(!body)throw new Error("empty");must(await supabase.from("house_notes").insert({author_id:user.id,body}));$("note-body").value="";await loadNotes();});});
@@ -248,11 +500,6 @@ $("export-data").addEventListener("click",async()=>{
   } catch(error) {if(error.message==="export_too_large")status("照片超过单次导出容量，请分批保存照片。");else report(error);}
   finally {button.disabled=false;}
 });
-$("capsule-form").addEventListener("submit",(e)=>{e.preventDefault();const form=e.currentTarget;run(form,async()=>{
-  const recipient=[...members.keys()].find((id)=>id!==user.id);if(!recipient)throw new Error("missing recipient");
-  const day=$("capsule-date").value, opens_at=new Date(`${day}T00:00:00+08:00`).toISOString();
-  must(await supabase.rpc("house_create_capsule",{p_recipient:recipient,p_title:$("capsule-title").value.trim(),p_body:$("capsule-body").value.trim(),p_opens_at:opens_at}));form.reset();await loadCapsules();status("信已经封存。");
-});});
 $("question-form").addEventListener("submit",(e)=>{e.preventDefault();const form=e.currentTarget;run(form,async()=>{must(await supabase.rpc("house_answer_question",{p_question:$("question-choice").value,p_answer:$("question-answer").value.trim()}));$("question-answer").value="";await loadAnswers();});});
 $("question-choice").addEventListener("change",()=>loadAnswers().catch(report));
 $("wave").addEventListener("click",()=>{const greetings=["小羊向你挥了挥手，今天也要开心呀。 ♡","嗨，记得给今天的自己一个微笑。 ✿","不管今天怎么样，小屋都为你留着灯。 ✧"];const message=$("interaction-message");message.textContent=greetings[Math.floor(Math.random()*greetings.length)];message.classList.remove("greeting-wave");requestAnimationFrame(()=>message.classList.add("greeting-wave"));});
@@ -261,8 +508,16 @@ $("flower").addEventListener("click",async()=>{try{must(await supabase.from("hou
 function moveMonth(delta){const d=new Date(Date.UTC(calendarMonth.year,calendarMonth.month+delta,1));calendarMonth={year:d.getUTCFullYear(),month:d.getUTCMonth()};renderCalendar();}
 $("previous-month").addEventListener("click",()=>moveMonth(-1));
 $("next-month").addEventListener("click",()=>moveMonth(1));
-function hideHouse(){ $("house").hidden=true; $("loading").hidden=false; }
-if(supabase) supabase.auth.onAuthStateChange((event)=>{if(event==="SIGNED_OUT"){hideHouse();queueMicrotask(()=>window.location.replace("./index.html"));}});
+function hideHouse(){ $("house").hidden=true; $("loading").hidden=false; diary.disconnect(); houseEffects.setVisible(false); updateLamb(); }
+if (supabase) supabase.auth.onAuthStateChange((event, session) => {
+  if (event === "SIGNED_OUT") {
+    hideHouse();
+    queueMicrotask(() => window.location.replace("./index.html"));
+  } else if (user && session?.user.id && session.user.id !== user.id) {
+    hideHouse();
+    queueMicrotask(() => window.location.reload());
+  }
+});
 window.addEventListener("pagehide",hideHouse);
 window.addEventListener("pageshow",(event)=>{if(event.persisted)window.location.reload();});
 boot().catch((e)=>{console.error("House failed",e?.code || e?.status || "unknown");$("loading").textContent="暂时无法打开小屋，请刷新重试。";});
