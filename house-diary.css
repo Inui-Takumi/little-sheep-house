@@ -82,6 +82,20 @@
   flex: none;
 }
 
+.diary-incoming {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid #e7d2c3;
+  border-radius: 6px;
+  background: #f8eae0;
+  color: #754e4b;
+}
+
 .diary-filters,
 .diary-font-options,
 .diary-pages {
@@ -389,6 +403,10 @@
 .diary-audience-summary {
   margin: 0 0 9px;
   line-height: 1.6;
+}
+
+#diary-delivery-date {
+  max-width: 18rem;
 }
 
 #diary-storage-notice {

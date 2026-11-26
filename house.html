@@ -33,7 +33,7 @@
       <a href="#dates">纪念日</a>
       <a href="#collections">收藏</a>
       <a href="#calendar">日历</a>
-      <a href="#capsules">时光信箱</a>
+      <a id="diary-link" href="#capsules">时光信箱<span id="diary-unread" class="nav-unread" aria-hidden="true" hidden></span></a>
       <a href="#questions">问问彼此</a>
     </nav>
     <main id="house-content" tabindex="0" aria-label="小屋内容">
@@ -125,6 +125,10 @@
           <div><p class="eyebrow">DEAR DIARY</p><h2>时光信箱 <span>✉</span></h2></div>
           <button type="button" class="button" id="diary-write">写日记</button>
         </div>
+        <div id="diary-incoming" class="diary-incoming" hidden>
+          <span id="diary-incoming-status" role="status"></span>
+          <button type="button" id="diary-open-incoming" class="diary-secondary">拆开新信</button>
+        </div>
         <div class="diary-filters" aria-label="按可见范围筛选" role="group">
           <button type="button" data-diary-filter="all" aria-pressed="true">全部</button>
           <button type="button" data-diary-filter="shared" aria-pressed="false">公开</button>
@@ -188,6 +192,16 @@
             <h3 tabindex="-1">检查后寄出</h3>
             <p id="diary-audience-summary" class="diary-audience-summary"></p>
             <button id="diary-review-visibility" type="button" class="diary-secondary">修改可见范围</button>
+            <button id="diary-cancel-delivery" type="button" class="diary-secondary" hidden>取消投递并转为私密</button>
+            <fieldset id="diary-delivery-options" class="diary-audience" hidden>
+              <legend>什么时候寄出？</legend>
+              <label><input type="radio" name="delivery" value="now" checked>立即寄出</label>
+              <label><input type="radio" name="delivery" value="scheduled">选择日期</label>
+            </fieldset>
+            <div id="diary-delivery-date-field" hidden>
+              <label for="diary-delivery-date">投递日期（北京时间 00:00）</label>
+              <input id="diary-delivery-date" type="date" max="9999-12-31">
+            </div>
           </section>
           <div id="diary-compose-preview" class="diary-compose-preview" hidden></div>
         </div>

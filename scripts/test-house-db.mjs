@@ -111,6 +111,82 @@ try {
   await as(second);
   assert.equal((await db.query(byId, [sharedId])).rows.length, 0);
   console.log("日记：两位住客、非住客、匿名、并发版本及公开/私密切换权限通过");
+
+  await as(first);
+  await db.query("update house_diary_entries set visibility='shared' where id=$1", [privateId]);
+  await db.exec("reset role");
+  await db.exec(await readFile(new URL("../supabase/migrations/202611260007_house_diary_delivery.sql", import.meta.url), "utf8"));
+
+  const scheduledId = "00000000-0000-0000-0000-000000000013";
+  const cancelledId = "00000000-0000-0000-0000-000000000014";
+  const laterId = "00000000-0000-0000-0000-000000000015";
+  const beijingDate = "(statement_timestamp() at time zone 'Asia/Shanghai')::date";
+  const unread = async () => (await db.query("select * from house_diary_unread_deliveries()")).rows;
+  const markRead = (id) => db.query("select house_diary_mark_delivery_read($1)", [id]);
+  const schedule = (id, offset) => db.query(
+    `insert into house_diary_entries(id,visibility,title,body,delivery_on)
+     values ($1,'shared','标题','正文',${beijingDate} + $2::integer)`, [id, offset]
+  );
+
+  await as(first);
+  await denied(`update house_diary_entries set delivery_on=${beijingDate} + 1 where id=$1`, [privateId]);
+  await denied(`insert into house_diary_entries(id,visibility,body,delivery_on)
+                values (gen_random_uuid(),'shared','正文',${beijingDate})`);
+  await schedule(scheduledId, 1);
+  await schedule(cancelledId, 1);
+  await schedule(laterId, 2);
+  await db.query(`update house_diary_entries set delivery_on=${beijingDate} + 3 where id=$1`, [laterId]);
+  await db.query("update house_diary_entries set visibility='private' where id=$1", [cancelledId]);
+  assert.equal((await db.query("select delivery_on from house_diary_entries where id=$1", [cancelledId])).rows[0].delivery_on, null);
+  assert.equal((await db.query(byId, [scheduledId])).rows[0].body, "正文");
+  assert.deepEqual(await unread(), []);
+  await markRead(scheduledId);
+
+  await as(second);
+  assert.equal((await db.query(byId, [privateId])).rows[0].body, testBody);
+  assert.equal((await db.query("select title,body from house_diary_entries where id=$1", [scheduledId])).rows.length, 0);
+  assert.deepEqual(await unread(), []);
+  await markRead(scheduledId);
+  await denied("select * from private.house_diary_delivery_reads");
+
+  // Move the test letters across the delivery boundary without changing the host clock.
+  await db.exec("reset role; alter table house_diary_entries disable trigger house_diary_delivery_before_write");
+  await db.query(`update house_diary_entries set delivery_on=${beijingDate} where id=$1`, [scheduledId]);
+  await db.query(`update house_diary_entries set delivery_on=${beijingDate} - 1 where id=$1`, [laterId]);
+  await db.exec("alter table house_diary_entries enable trigger house_diary_delivery_before_write");
+
+  await as(outsider);
+  assert.deepEqual(await unread(), []);
+  await markRead(scheduledId);
+  await db.exec("reset role; set role anon");
+  await assert.rejects(unread());
+  await assert.rejects(markRead(scheduledId));
+
+  await as(first);
+  assert.deepEqual(await unread(), []);
+  await markRead(scheduledId);
+  await denied(`update house_diary_entries set delivery_on=${beijingDate} + 1 where id=$1`, [scheduledId]);
+  await db.query("update house_diary_entries set body='投递后编辑' where id=$1", [scheduledId]);
+
+  await as(second);
+  assert.equal((await db.query(byId, [scheduledId])).rows[0].body, "投递后编辑");
+  assert.equal((await db.query(byId, [cancelledId])).rows.length, 0);
+  const [latest] = await unread();
+  assert.equal(latest.id, scheduledId);
+  assert.equal(Number(latest.unread_count), 2);
+  const beforeRead = (await db.query(byId, [scheduledId])).rows[0].version;
+  await markRead(scheduledId);
+  await markRead(scheduledId);
+  assert.equal((await db.query(byId, [scheduledId])).rows[0].version, beforeRead);
+  assert.equal((await unread())[0].id, laterId);
+  await markRead(laterId);
+  assert.deepEqual(await unread(), []);
+
+  await as(first);
+  await db.query("delete from house_diary_entries where id=$1", [scheduledId]);
+  await db.exec("reset role");
+  assert.equal((await db.query("select entry_id from private.house_diary_delivery_reads where entry_id=$1", [scheduledId])).rows.length, 0);
+  console.log("日期投递：历史公开信兼容、到期前保密、改期和取消、收信方提醒与去重通过");
   console.log("共享权限、私有照片规则、时光信件及双人问答：本机数据库测试通过");
 } finally {
   await db.close();

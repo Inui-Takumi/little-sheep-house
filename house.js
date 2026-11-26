@@ -33,7 +33,7 @@ const navLinks = document.querySelectorAll(".house-nav a");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const lamb = $("house-lamb");
 const houseEffects = createHouseEffects($("house"), reduceMotion);
-const diary = createHouseDiary({ supabase, nameOf, status });
+const diary = createHouseDiary({ supabase, nameOf, status, today });
 
 function updateLamb() {
   if ($("house").hidden || activePanel !== $("overview") || document.hidden || reduceMotion.matches) {
@@ -83,7 +83,7 @@ function showPanel(fragment, moveFocus = false) {
   }
   updateLamb();
   if (panel === $("activity")) refreshActivity();
-  if (panel === $("capsules")) void diary.refreshList();
+  if (panel === $("capsules")) diary.refreshMailbox();
   void markNotesRead();
 }
 
