@@ -405,8 +405,26 @@
   line-height: 1.6;
 }
 
+.diary-delivery-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 #diary-delivery-date {
-  max-width: 18rem;
+  width: min(100%, 18rem);
+}
+
+#diary-delivery-seconds-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+}
+
+#diary-delivery-seconds {
+  width: 4rem;
 }
 
 #diary-storage-notice {

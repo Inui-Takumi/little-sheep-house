@@ -1,5 +1,5 @@
 import { SUPABASE_CONFIG } from "./supabase-config.js";
-import { isSupabaseConfigured, siteRootUrl, supabase } from "./supabase-client.js";
+import { activateLoginSession, getLoginSession, isSupabaseConfigured, signOutOfHouse, siteRootUrl, supabase } from "./supabase-client.js";
 
 const panels = {
   login: document.getElementById("login-panel"),
@@ -15,11 +15,13 @@ const registrationPending = document.getElementById("registration-pending");
 const formMessage = document.getElementById("form-message");
 const serviceMessage = document.getElementById("service-message");
 const loginForm = document.getElementById("login-form");
+const rememberLogin = document.getElementById("remember-login");
 const registerForm = document.getElementById("register-form");
 const forgotForm = document.getElementById("forgot-form");
 const recoveryForm = document.getElementById("recovery-form");
 
 let registrationOpen = false;
+let initialSessionCheck;
 let recoveryMode = new URLSearchParams(window.location.search).get("mode") === "recovery"
   || new URLSearchParams(window.location.hash.slice(1)).get("type") === "recovery";
 
@@ -74,11 +76,11 @@ async function hashInvite(invite) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function hasValidProfile() {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
+async function hasValidProfile(client = supabase) {
+  const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) return false;
 
-  const { data: profile, error: profileError } = await supabase
+  const { data: profile, error: profileError } = await client
     .from("profiles")
     .select("id, slot, nickname, gender")
     .eq("id", userData.user.id)
@@ -94,7 +96,7 @@ async function goHomeIfSignedIn() {
     window.location.replace("./house.html");
     return true;
   }
-  await supabase.auth.signOut();
+  await signOutOfHouse();
   return false;
 }
 
@@ -149,11 +151,17 @@ loginForm.addEventListener("submit", async (event) => {
   clearMessage();
   if (!loginForm.reportValidity()) return;
 
+  const email = normalizeLogin(document.getElementById("login-identifier").value);
+  const password = document.getElementById("login-password").value;
+  const remember = rememberLogin.checked;
+  let loginSession;
+  let discardSession = false;
+
   setBusy(loginForm, true);
   try {
-    const email = normalizeLogin(document.getElementById("login-identifier").value);
-    const password = document.getElementById("login-password").value;
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (await initialSessionCheck) return;
+    loginSession = getLoginSession(remember);
+    const { error } = await loginSession.client.auth.signInWithPassword({ email, password });
     if (error) {
       if (error.code === "email_not_confirmed") {
         showMessage("邮箱还没有完成确认，请先打开确认邮件里的链接。", "error");
@@ -163,15 +171,19 @@ loginForm.addEventListener("submit", async (event) => {
       return;
     }
 
-    if (!(await hasValidProfile())) {
-      await supabase.auth.signOut();
+    discardSession = true;
+    if (!(await hasValidProfile(loginSession.client))) {
       showMessage("登录失败，请检查账号或密码。", "error");
       return;
     }
+    activateLoginSession(loginSession);
+    discardSession = false;
     window.location.replace("./house.html");
   } catch {
     showMessage("暂时连不上小屋，请检查网络后重试。", "error");
   } finally {
+    if (discardSession) await signOutOfHouse(loginSession);
+    if (loginSession && loginSession.client !== supabase) await loginSession.client.auth.dispose();
     setBusy(loginForm, false);
   }
 });
@@ -286,7 +298,7 @@ recoveryForm.addEventListener("submit", async (event) => {
       showMessage("密码没有保存，请重新打开邮件里的链接再试。", "error");
       return;
     }
-    await supabase.auth.signOut();
+    await signOutOfHouse();
     recoveryMode = false;
     history.replaceState({}, "", siteRootUrl());
     selectPanel("login");
@@ -318,7 +330,8 @@ async function boot() {
     return;
   }
 
-  if (await goHomeIfSignedIn()) return;
+  initialSessionCheck = goHomeIfSignedIn();
+  if (await initialSessionCheck) return;
   await refreshRegistrationStatus();
 
   const error = new URLSearchParams(window.location.search).get("error");

@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from "./supabase-client.js";
+import { isSupabaseConfigured, onStoredSessionCleared, signOutOfHouse, supabase } from "./supabase-client.js";
 import { createHouseEffects } from "./house-effects.js";
 import { createHouseDiary } from "./house-diary.js";
 
@@ -8,6 +8,8 @@ let calendarMonth = null;
 let activePanel, pendingNotesRead;
 let activityReady = false;
 let recallHistory, drawnWishId;
+let signingOut = false;
+let redirectingToLogin = false;
 const activitySources = new Set();
 const itemKinds = { memory:"回忆", wish:"愿望", song:"歌曲", task:"待办", mood:"心情" };
 const fallbacks = ["你在的日子，平常也闪闪发光。", "今天也要记得，好好照顾自己。", "有你一起，日子就有了期待。"];
@@ -412,6 +414,7 @@ async function boot() {
   if (result.error || !user) { window.location.replace("./index.html"); return; }
   const profile = await supabase.from("profiles").select("nickname,slot").eq("id",user.id).maybeSingle();
   if (profile.error || !profile.data || ![1,2].includes(profile.data.slot)) { window.location.replace("./index.html?error=profile"); return; }
+  if (redirectingToLogin || signingOut) return;
   $("current-name").textContent=profile.data.nickname;
   showPanel(location.hash);
   $("house").hidden=false; $("loading").hidden=true; document.documentElement.classList.remove("house-locked");
@@ -444,7 +447,15 @@ async function boot() {
   if (activePanel === $("activity")) refreshActivity();
   try { await loadAnswers(); } catch(e) { console.error("Questions unavailable",e?.code || e?.status || "unknown"); $("question-results").replaceChildren(node("p","暂时无法查看回答，请稍后再试。","empty")); }
 }
-$("logout").addEventListener("click",async()=>{await supabase.auth.signOut();window.location.replace("./index.html");});
+$("logout").addEventListener("click", async () => {
+  signingOut = true;
+  hideHouse();
+  try {
+    await signOutOfHouse();
+  } finally {
+    returnToLogin();
+  }
+});
 $("note-form").addEventListener("submit",(e)=>{e.preventDefault();run(e.currentTarget,async()=>{const body=$("note-body").value.trim();if(!body)throw new Error("empty");must(await supabase.from("house_notes").insert({author_id:user.id,body}));$("note-body").value="";await loadNotes();});});
 $("date-form").addEventListener("submit",(e)=>{e.preventDefault();const form=e.currentTarget;run(form,async()=>{const title=$("date-title").value.trim();if(!title)throw new Error("empty");must(await supabase.from("house_dates").insert({created_by:user.id,title,event_date:$("date-value").value,kind:$("date-kind").value}));form.reset();await loadDates();});});
 $("quote-form").addEventListener("submit",(e)=>{e.preventDefault();run(e.currentTarget,async()=>{const body=$("quote-body").value.trim();if(!body)throw new Error("empty");must(await supabase.from("house_quotes").insert({author_id:user.id,body}));$("quote-body").value="";await loadQuotes();status("这句话已经收进小屋。");});});
@@ -510,15 +521,23 @@ function moveMonth(delta){const d=new Date(Date.UTC(calendarMonth.year,calendarM
 $("previous-month").addEventListener("click",()=>moveMonth(-1));
 $("next-month").addEventListener("click",()=>moveMonth(1));
 function hideHouse(){ $("house").hidden=true; $("loading").hidden=false; diary.disconnect(); houseEffects.setVisible(false); updateLamb(); }
-if (supabase) supabase.auth.onAuthStateChange((event, session) => {
-  if (event === "SIGNED_OUT") {
-    hideHouse();
-    queueMicrotask(() => window.location.replace("./index.html"));
-  } else if (user && session?.user.id && session.user.id !== user.id) {
-    hideHouse();
-    queueMicrotask(() => window.location.reload());
-  }
-});
+function returnToLogin() {
+  if (redirectingToLogin) return;
+  redirectingToLogin = true;
+  hideHouse();
+  window.location.replace("./index.html");
+}
+if (supabase) {
+  onStoredSessionCleared(returnToLogin);
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT" && !signingOut) {
+      queueMicrotask(returnToLogin);
+    } else if (user && session?.user.id && session.user.id !== user.id) {
+      hideHouse();
+      queueMicrotask(() => window.location.reload());
+    }
+  });
+}
 window.addEventListener("pagehide",hideHouse);
 window.addEventListener("pageshow",(event)=>{if(event.persisted)window.location.reload();});
 boot().catch((e)=>{console.error("House failed",e?.code || e?.status || "unknown");$("loading").textContent="暂时无法打开小屋，请刷新重试。";});

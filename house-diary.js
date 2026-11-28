@@ -4,7 +4,7 @@ const table = "house_diary_entries";
 const summaries = "id,author_id,visibility,title,envelope,seal,created_at,delivery_on";
 const details = `${summaries},body,paper,font,version`;
 const pageSize = 20;
-const editable = ["visibility", "title", "body", "envelope", "paper", "font", "seal", "delivery_on"];
+const editable = ["visibility", "title", "body", "envelope", "paper", "font", "seal"];
 const deliveryRefreshMs = 60000;
 const musicBucket = "house-diary-music";
 const musicLimit = 10 * 1024 * 1024;
@@ -32,6 +32,10 @@ const stepNames = ["信封", "信纸", "正文", "字体", "蜡封", "寄出"];
 const defaultStyles = { visibility: "private", envelope: "rose", paper: "ruled", font: "serif", seal: "lamb" };
 const calendarDate = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai", year: "numeric", month: "long", day: "numeric"
+});
+const beijingClock = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
 });
 const countFormat = new Intl.NumberFormat("en-US");
 const fontRequests = new Set();
@@ -76,8 +80,14 @@ function visibilityLabel(visibility) {
   return visibility === "shared" ? "公开" : "私密";
 }
 
-function deliveryDateLabel(date) {
-  return calendarDate.format(new Date(`${date}T00:00:00+08:00`));
+function beijingInputValue(date) {
+  const parts = Object.fromEntries(beijingClock.formatToParts(date).map(({ type, value }) => [type, value]));
+  return `${parts.year.padStart(4, "0")}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function deliveryInstant(entry) {
+  if (entry?.delivery_at) return new Date(entry.delivery_at).toISOString();
+  return entry?.delivery_on ? new Date(`${entry.delivery_on}T00:00:00+08:00`).toISOString() : null;
 }
 
 function wax(key) {
@@ -126,6 +136,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   const titleInput = $("diary-title");
   const bodyInput = $("diary-body");
   const deliveryInput = $("diary-delivery-date");
+  const deliverySeconds = $("diary-delivery-seconds");
   const musicInput = $("diary-music-file");
   const musicToggle = $("diary-music-toggle");
   const musicStatus = $("diary-music-status");
@@ -164,6 +175,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   let readerRequest = 0;
   let deliveryRequest = 0;
   let deliveryTimer, incomingId, markedReaderId;
+  let deliverySchema, supportsDeliveryTime = false;
   let saving = false;
   let deleting = false;
 
@@ -172,7 +184,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   }
 
   function diaryQuery(columns = summaries) {
-    return supabase.from(table).select(columns);
+    return supabase.from(table).select(supportsDeliveryTime ? `${columns},delivery_at` : columns);
   }
 
   function byNewest(query) {
@@ -180,6 +192,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   }
 
   async function loadEntry(id) {
+    await deliverySchema;
     const result = await diaryQuery(`${details},music_path`).eq("id", id).maybeSingle();
     if (result.error?.code !== "42703") return result;
     return diaryQuery(details).eq("id", id).maybeSingle();
@@ -195,14 +208,21 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   }
 
   function isPending(entry) {
-    return Boolean(entry.delivery_on && entry.delivery_on > today());
+    return Date.parse(deliveryInstant(entry)) > Date.now();
+  }
+
+  function deliveryLabel(instant) {
+    const date = new Date(instant);
+    const day = calendarDate.format(date);
+    return supportsDeliveryTime ? `${day} ${beijingInputValue(date).slice(11)}（北京时间）` : day;
   }
 
   function entryMetadata(entry) {
     const author = entry.author_id === userId ? "我" : nameOf(entry.author_id);
     const date = calendarDate.format(new Date(entry.created_at));
-    const delivery = entry.delivery_on
-      ? ` · ${isPending(entry) ? "待投递" : "已投递"} ${deliveryDateLabel(entry.delivery_on)}`
+    const instant = deliveryInstant(entry);
+    const delivery = instant
+      ? ` · ${isPending(entry) ? "待投递" : "已投递"} ${deliveryLabel(instant)}`
       : "";
     return `${visibilityLabel(entry.visibility)} · ${author} · ${date}${delivery}`;
   }
@@ -223,6 +243,8 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     if (!userId) return;
     const request = ++homeRequest;
     try {
+      await deliverySchema;
+      if (request !== homeRequest) return;
       const [shared, own] = await Promise.all([
         byNewest(diaryQuery().eq("visibility", "shared")).limit(1).maybeSingle(),
         byNewest(diaryQuery().eq("visibility", "private").eq("author_id", userId)).limit(1).maybeSingle()
@@ -252,6 +274,8 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       message.textContent = "正在取信…";
     }
     try {
+      await deliverySchema;
+      if (request !== listRequest) return;
       let query = byNewest(diaryQuery());
       if (filter !== "all") query = query.eq("visibility", filter);
       if (filter === "private") query = query.eq("author_id", userId);
@@ -465,7 +489,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   }
 
   function markOpenedDiary(entry, request) {
-    if (reader.dataset.phase === "letter" && entry.delivery_on && entry.author_id !== userId && markedReaderId !== entry.id) {
+    if (reader.dataset.phase === "letter" && deliveryInstant(entry) && entry.author_id !== userId && markedReaderId !== entry.id) {
       void markDeliveryRead(entry, request);
     }
   }
@@ -587,24 +611,33 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     return day.toISOString().slice(0, 10);
   }
 
+  function readDeliveryInput() {
+    if (!deliveryInput.value) return null;
+    if (!supportsDeliveryTime) return deliveryInstant({ delivery_on: deliveryInput.value });
+    if (!deliverySeconds.validity.valid) return null;
+    const seconds = String(deliverySeconds.valueAsNumber).padStart(2, "0");
+    const instant = Date.parse(`${deliveryInput.value.slice(0, 16)}:${seconds}+08:00`);
+    return Number.isFinite(instant) ? new Date(instant).toISOString() : null;
+  }
+
   function updateDeliveryOptions() {
     const shared = draft.visibility === "shared";
     const showOptions = shared && draft.deliveryEditable;
     const scheduled = showOptions && draft.deliveryMode === "scheduled";
-    $("diary-cancel-delivery").hidden = !shared || !(draft.originalDeliveryOn > today());
+    $("diary-cancel-delivery").hidden = !shared || !(Date.parse(draft.originalDeliveryAt) > Date.now());
     $("diary-delivery-options").hidden = !showOptions;
     $("diary-delivery-date-field").hidden = !scheduled;
-    deliveryInput.min = firstDeliveryDate();
+    deliveryInput.min = supportsDeliveryTime ? beijingInputValue(new Date()).slice(0, 16) : firstDeliveryDate();
     for (const input of deliveryModes) input.checked = input.value === draft.deliveryMode;
 
     let summary = "私密日记 · 只有你自己能看见。";
     if (shared) {
       if (scheduled) {
-        summary = draft.delivery_on
-          ? `将在 ${deliveryDateLabel(draft.delivery_on)}投递给另一位住客。`
-          : "选好日期后，信件将在当天投递给另一位住客。";
-      } else if (!showOptions && draft.delivery_on) {
-        summary = `已于 ${deliveryDateLabel(draft.delivery_on)}投递。`;
+        summary = draft.deliveryAt
+          ? `将在 ${deliveryLabel(draft.deliveryAt)}投递给另一位住客。`
+          : "选好投递时间后，信件会在预约时间送达。";
+      } else if (!showOptions && draft.deliveryAt) {
+        summary = `已于 ${deliveryLabel(draft.deliveryAt)}投递。`;
       } else {
         summary = "公开日记 · 小屋里的两位住客都能看见。";
       }
@@ -639,20 +672,24 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     $("diary-count").textContent = `${countFormat.format(Array.from(bodyInput.value).length)} / 10,000`;
   }
 
-  function openComposer(entry) {
+  async function openComposer(entry) {
+    await deliverySchema;
     if (!userId || composer.open) return;
     draft = entry ? { ...entry, originalVisibility: entry.visibility } : {
-      id: crypto.randomUUID(), ...defaultStyles, title: "", body: "", delivery_on: null
+      id: crypto.randomUUID(), ...defaultStyles, title: "", body: ""
     };
-    draft.originalDeliveryOn = draft.delivery_on;
+    draft.deliveryAt = deliveryInstant(entry);
+    draft.originalDeliveryAt = draft.deliveryAt;
     draft.music_path = draft.music_path ?? null;
     draft.originalMusicPath = draft.music_path;
-    draft.deliveryMode = draft.delivery_on ? "scheduled" : "now";
+    draft.deliveryMode = draft.deliveryAt ? "scheduled" : "now";
     draft.deliveryEditable = entry?.visibility !== "shared" || isPending(entry);
     draft.initial = editable.map((field) => draft[field]);
     titleInput.value = draft.title;
     bodyInput.value = draft.body;
-    deliveryInput.value = draft.delivery_on ?? "";
+    const localDelivery = draft.deliveryAt ? beijingInputValue(new Date(draft.deliveryAt)) : "";
+    deliveryInput.value = localDelivery.slice(0, supportsDeliveryTime ? 16 : 10);
+    deliverySeconds.value = localDelivery.slice(17) || "0";
     musicInput.value = "";
     updateMusicSelection();
     $("diary-compose-title").textContent = entry ? "编辑日记" : "写日记";
@@ -670,7 +707,8 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   function draftChanged() {
     if (!draft) return false;
     syncText();
-    return draft.deliveryMode !== (draft.originalDeliveryOn ? "scheduled" : "now") ||
+    return draft.deliveryMode !== (draft.originalDeliveryAt ? "scheduled" : "now") ||
+      draft.deliveryAt !== draft.originalDeliveryAt ||
       draft.music_path !== draft.originalMusicPath ||
       editable.some((field, index) => draft[field] !== draft.initial[index]);
   }
@@ -737,7 +775,9 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
 
     // A request can reach the database even if its response never reaches the browser.
     const existing = await loadEntry(entry.id);
-    if (!existing.error && existing.data && Object.entries(payload).every(([field, value]) => existing.data[field] === value)) return;
+    if (!existing.error && existing.data && Object.entries(payload).every(([field, value]) => (
+      (field === "delivery_at" ? deliveryInstant(existing.data) : existing.data[field]) === value
+    ))) return;
     if (!error || error.code === "23505") {
       throw new Error("diary_conflict");
     }
@@ -750,21 +790,29 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     const entry = draft;
     const editing = entry.version != null;
     const scheduled = entry.visibility === "shared" && entry.deliveryMode === "scheduled";
-    const deliveryOn = scheduled ? entry.delivery_on : null;
-    if (scheduled && (!deliveryOn || (deliveryOn !== entry.originalDeliveryOn &&
-        (deliveryOn < firstDeliveryDate() || !deliveryInput.validity.valid)))) {
-      $("diary-compose-status").textContent = "请选择北京时间明天或之后的日期。";
+    const deliveryAt = scheduled ? entry.deliveryAt : null;
+    if (scheduled && supportsDeliveryTime && !deliverySeconds.validity.valid) {
+      $("diary-compose-status").textContent = "秒数请输入 0 到 59 之间的整数。";
+      deliverySeconds.focus();
+      return;
+    }
+    if (scheduled && (!deliveryAt || (deliveryAt !== entry.originalDeliveryAt &&
+        (Date.parse(deliveryAt) <= Date.now() || !deliveryInput.validity.valid)))) {
+      $("diary-compose-status").textContent = supportsDeliveryTime
+        ? "请选择晚于当前时间的北京时间。"
+        : "请选择北京时间明天或之后的日期。";
       deliveryInput.focus();
       return;
     }
     if (editing && entry.originalVisibility === "private" && entry.visibility === "shared" &&
-        !confirm(deliveryOn
-          ? `将这篇私密日记设为公开，并于 ${deliveryDateLabel(deliveryOn)}投递？`
+        !confirm(deliveryAt
+          ? `将这篇私密日记设为公开，并于 ${deliveryLabel(deliveryAt)}投递？`
           : "将这篇私密日记设为公开？另一位住客也能看到正文。")) return;
 
     const payload = Object.fromEntries(editable.map((field) => [field, entry[field]]));
     payload.title = payload.title.trim();
-    payload.delivery_on = deliveryOn;
+    if (supportsDeliveryTime) payload.delivery_at = deliveryAt;
+    else payload.delivery_on = deliveryAt ? deliveryInput.value : null;
     if (entry.music_path !== entry.originalMusicPath) payload.music_path = entry.music_path;
     saving = true;
     const buttons = ["diary-send", "diary-back", "diary-cancel", "diary-review-visibility", "diary-cancel-delivery"].map($);
@@ -772,6 +820,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     $("diary-delivery-options").disabled = true;
     $("diary-music-options").disabled = true;
     deliveryInput.disabled = true;
+    deliverySeconds.disabled = true;
     $("diary-compose-status").textContent = editing ? "正在保存…" : "正在寄出…";
     try {
       if (entry.musicUpload) {
@@ -790,15 +839,15 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       closeComposer(true, true);
       page = 0;
       refresh();
-      status(deliveryOn && deliveryOn > today()
-        ? `已预约于 ${deliveryDateLabel(deliveryOn)}投递。`
+      status(Date.parse(deliveryAt) > Date.now()
+        ? `已预约于 ${deliveryLabel(deliveryAt)}投递。`
         : editing ? "日记修改已保存。" : "日记已寄出。");
     } catch (error) {
       if (draft !== entry) return;
       updateStorageNotice(error);
       const saveErrors = {
         diary_conflict: "日记已在其他窗口修改或删除。你可以复制当前内容，再重新打开最新的日记。",
-        diary_delivery_date_invalid: "所选日期已到，请重新选择投递日期。",
+        diary_delivery_date_invalid: "所选投递时间已到，请重新选择。",
         diary_already_delivered: "这封信已经投递，请重新打开日记后修改。",
         diary_music_upload: "背景音乐上传失败。文件和草稿已保留，可以重试。",
         diary_music_missing: "配乐暂时无法关联，请重新选择文件后重试。"
@@ -812,6 +861,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       $("diary-delivery-options").disabled = false;
       $("diary-music-options").disabled = false;
       deliveryInput.disabled = false;
+      deliverySeconds.disabled = false;
     }
   }
 
@@ -838,7 +888,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     }
   }
 
-  $("diary-write").addEventListener("click", () => openComposer());
+  $("diary-write").addEventListener("click", () => void openComposer());
   $("diary-retry").addEventListener("click", () => refresh());
   $("diary-open-incoming").addEventListener("click", (event) => {
     if (incomingId) void openEntry(incomingId, event.currentTarget);
@@ -863,11 +913,13 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       updateDeliveryOptions();
     });
   }
-  deliveryInput.addEventListener("input", () => {
-    draft.delivery_on = deliveryInput.value || null;
-    $("diary-compose-status").textContent = "";
-    updateDeliveryOptions();
-  });
+  for (const input of [deliveryInput, deliverySeconds]) {
+    input.addEventListener("input", () => {
+      draft.deliveryAt = readDeliveryInput();
+      $("diary-compose-status").textContent = "";
+      updateDeliveryOptions();
+    });
+  }
   musicInput.addEventListener("change", () => {
     const file = musicInput.files[0];
     if (!file) return;
@@ -922,7 +974,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     const entry = readerEntry;
     if (entry?.author_id !== userId) return;
     closeReader();
-    openComposer(entry);
+    void openComposer(entry);
   });
   $("diary-delete").addEventListener("click", deleteEntry);
   window.addEventListener("focus", () => {
@@ -943,6 +995,15 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   return {
     connect(id) {
       userId = id;
+      deliverySchema ??= supabase.from(table).select("delivery_at").limit(0).then(({ error }) => {
+        supportsDeliveryTime = !error;
+        if (supportsDeliveryTime) return;
+        $("diary-scheduled-label").textContent = "选择日期";
+        $("diary-delivery-label").textContent = "投递日期（北京时间 00:00）";
+        $("diary-delivery-seconds-field").hidden = true;
+        deliveryInput.type = "date";
+        deliveryInput.max = "9999-12-31";
+      });
       refresh();
       clearInterval(deliveryTimer);
       deliveryTimer = setInterval(() => {

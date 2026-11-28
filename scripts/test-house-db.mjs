@@ -239,6 +239,61 @@ try {
   await db.query("update house_diary_entries set music_path=null where id=$1", [musicId]);
   assert.equal((await removeObject()).rows.length, 1);
   console.log("信件配乐：信纸兼容、文件归属、私密和定时封存、到期读取及解除关联后清理通过");
+
+  const legacyPendingId = "00000000-0000-0000-0000-000000000018";
+  const preciseId = "00000000-0000-0000-0000-000000000019";
+  await schedule(legacyPendingId, 1);
+  const [legacyVersion] = (await db.query(
+    "select version, updated_at from house_diary_entries where id=$1", [legacyPendingId]
+  )).rows;
+  await db.exec("reset role");
+  await db.exec(await readFile(new URL("../supabase/migrations/202611280009_house_diary_delivery_time.sql", import.meta.url), "utf8"));
+  const [legacyAfter] = (await db.query(
+    `select version, updated_at, delivery_at = (delivery_on::timestamp at time zone 'Asia/Shanghai') as kept_midnight
+     from house_diary_entries where id=$1`, [legacyPendingId]
+  )).rows;
+  assert.deepEqual(legacyAfter, { ...legacyVersion, kept_midnight: true });
+  assert.equal((await db.query(
+    `select receipt.delivery_at = entry.delivery_at as kept_receipt
+     from private.house_diary_delivery_reads receipt join house_diary_entries entry on entry.id=receipt.entry_id
+     where entry.id=$1 and receipt.recipient_id=$2`, [laterId, second]
+  )).rows[0].kept_receipt, true);
+
+  const preciseSecond = "date_trunc('second', statement_timestamp())";
+  await as(first);
+  assert.equal((await db.query(
+    `update house_diary_entries set delivery_on=${beijingDate} + 2 where id=$1
+     returning delivery_at = (delivery_on::timestamp at time zone 'Asia/Shanghai') as kept_midnight`,
+    [legacyPendingId]
+  )).rows[0].kept_midnight, true);
+  await denied(`insert into house_diary_entries(id,visibility,body,delivery_at)
+                values (gen_random_uuid(),'shared','正文',${preciseSecond})`);
+  await db.query(`insert into house_diary_entries(id,visibility,body,delivery_at)
+                  values ($1,'shared','同一天稍后寄出',${preciseSecond} + interval '20 seconds')`, [preciseId]);
+  const [precise] = (await db.query(
+    `update house_diary_entries set delivery_at=delivery_at + interval '1 second' where id=$1
+     returning delivery_at, delivery_on = (delivery_at at time zone 'Asia/Shanghai')::date as legacy_date`, [preciseId]
+  )).rows;
+  assert.equal(precise.delivery_at.getUTCMilliseconds(), 0);
+  assert.equal(precise.legacy_date, true);
+
+  await as(second);
+  assert.equal((await db.query(byId, [legacyPendingId])).rows.length, 0);
+  assert.equal((await db.query(byId, [preciseId])).rows.length, 0);
+  await markRead(preciseId);
+  assert.deepEqual(await unread(), []);
+  await db.exec("reset role; alter table house_diary_entries disable trigger house_diary_delivery_before_write");
+  await db.query(`update house_diary_entries set delivery_at=${preciseSecond} where id=$1`, [preciseId]);
+  await db.exec("alter table house_diary_entries enable trigger house_diary_delivery_before_write");
+  await as(second);
+  assert.equal((await db.query(byId, [preciseId])).rows[0].body, "同一天稍后寄出");
+  assert.equal((await unread())[0].id, preciseId);
+  await markRead(preciseId);
+  assert.deepEqual(await unread(), []);
+  await as(first);
+  await denied(`update house_diary_entries set delivery_at=${preciseSecond} + interval '1 day' where id=$1`, [preciseId]);
+  console.log("秒级投递：旧预约和已读兼容，同日预约、改期、到期前封存和到期后可读通过");
+
   console.log("共享权限、私有照片规则、时光信件及双人问答：本机数据库测试通过");
 } finally {
   await db.close();

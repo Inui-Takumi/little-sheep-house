@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from "./supabase-client.js";
+import { isSupabaseConfigured, onStoredSessionCleared, signOutOfHouse, supabase } from "./supabase-client.js";
 
 const loading = document.getElementById("auth-loading");
 const accountButton = document.getElementById("account-button");
@@ -45,11 +45,12 @@ async function guardHome() {
     .single();
 
   if (profileError || !profile || ![1, 2].includes(profile.slot) || !profile.nickname) {
-    await supabase.auth.signOut();
+    await signOutOfHouse();
     returnToLogin("profile");
     return;
   }
 
+  if (redirecting || signingOut) return;
   accountNickname.textContent = profile.nickname;
   accountMenuName.textContent = profile.nickname;
   accountButton.setAttribute("aria-label", `${profile.nickname}的账户菜单`);
@@ -77,7 +78,7 @@ logoutButton.addEventListener("click", async () => {
   logoutButton.disabled = true;
   logoutButton.textContent = "正在退出…";
   try {
-    await supabase.auth.signOut();
+    await signOutOfHouse();
   } finally {
     returnToLogin("");
   }
@@ -94,6 +95,7 @@ window.addEventListener("pageshow", (event) => {
 });
 
 if (supabase) {
+  onStoredSessionCleared(() => returnToLogin("session"));
   supabase.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT" && !signingOut) queueMicrotask(() => returnToLogin("session"));
   });

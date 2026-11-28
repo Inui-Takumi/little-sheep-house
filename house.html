@@ -233,11 +233,16 @@
             <fieldset id="diary-delivery-options" class="diary-audience" hidden>
               <legend>什么时候寄出？</legend>
               <label><input type="radio" name="delivery" value="now" checked>立即寄出</label>
-              <label><input type="radio" name="delivery" value="scheduled">选择日期</label>
+              <label><input type="radio" name="delivery" value="scheduled"><span id="diary-scheduled-label">选择投递时间</span></label>
             </fieldset>
             <div id="diary-delivery-date-field" hidden>
-              <label for="diary-delivery-date">投递日期（北京时间 00:00）</label>
-              <input id="diary-delivery-date" type="date" max="9999-12-31">
+              <label id="diary-delivery-label" for="diary-delivery-date">投递日期和时间（北京时间）</label>
+              <div class="diary-delivery-inputs">
+                <input id="diary-delivery-date" type="datetime-local" max="9999-12-31T23:59">
+                <label id="diary-delivery-seconds-field">
+                  <input id="diary-delivery-seconds" type="number" inputmode="numeric" min="0" max="59" step="1" value="0" required> 秒
+                </label>
+              </div>
             </div>
             <fieldset class="diary-music" id="diary-music-options">
               <legend>背景音乐（可选）</legend>
