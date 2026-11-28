@@ -1,3 +1,5 @@
+import { createDiaryBouquet } from "./house-diary-bouquet.js";
+
 const table = "house_diary_entries";
 const summaries = "id,author_id,visibility,title,envelope,seal,created_at,delivery_on";
 const details = `${summaries},body,paper,font,version`;
@@ -120,12 +122,18 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   const $ = (id) => document.getElementById(id);
   const composer = $("diary-compose");
   const reader = $("diary-reader");
+  const houseContent = $("house-content");
   const titleInput = $("diary-title");
   const bodyInput = $("diary-body");
   const deliveryInput = $("diary-delivery-date");
   const musicInput = $("diary-music-file");
-  const musicPlayer = $("diary-audio");
+  const musicToggle = $("diary-music-toggle");
   const musicStatus = $("diary-music-status");
+  const envelopeStage = $("diary-envelope-stage");
+  const bouquet = createDiaryBouquet($("diary-opening-bouquet"), () => $("house").classList.contains("effects-running"));
+  const openEnvelope = $("diary-open-envelope");
+  const envelopeArtwork = $("diary-envelope-art");
+  const readerScroll = $("diary-reader-scroll");
   const readerContents = $("diary-reader-content");
   const preview = $("diary-compose-preview");
   const list = $("diary-list");
@@ -145,8 +153,9 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     }
   });
   let userId, draft, readerEntry, readerId;
-  let readerMusicPath, readerMusicUrl;
-  let readerMusicRequest = 0;
+  let readerTrack;
+  let readerOpener, readerScrollTop;
+  let readerSession = 0;
   let step = 0;
   let page = 0;
   let filter = "all";
@@ -206,7 +215,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     copy.append(element("strong", titleOf(entry)));
     if (!compact) copy.append(element("small", entryMetadata(entry)));
     button.append(envelopeArt(entry.envelope, entry.seal), copy);
-    button.addEventListener("click", () => void openEntry(entry.id));
+    button.addEventListener("click", () => void openEntry(entry.id, button));
     return button;
   }
 
@@ -317,103 +326,222 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     void refreshDeliveries();
   }
 
-  function clearReaderMusic() {
-    ++readerMusicRequest;
-    readerMusicPath = null;
-    musicPlayer.pause();
-    if (readerMusicUrl) {
-      musicPlayer.removeAttribute("src");
-      musicPlayer.load();
-      URL.revokeObjectURL(readerMusicUrl);
-      readerMusicUrl = null;
+  function syncReaderMusic() {
+    const active = Boolean(readerTrack?.requested);
+    const label = active ? "停止背景音乐" : "播放背景音乐";
+    musicToggle.hidden = !readerTrack || reader.dataset.phase !== "letter";
+    musicToggle.setAttribute("aria-pressed", String(active));
+    musicToggle.setAttribute("aria-label", label);
+    musicToggle.title = label;
+  }
+
+  function stopReaderMusic(track) {
+    track.requested = false;
+    ++track.request;
+    if (track.source) {
+      track.source.onended = null;
+      track.source.stop();
+      track.source.disconnect();
+      track.source = null;
     }
-    musicPlayer.hidden = true;
-    $("diary-reader-music").hidden = true;
+    syncReaderMusic();
+  }
+
+  function downloadTrack(track) {
+    track.file ??= supabase.storage.from(musicBucket).download(track.path)
+      .then(({ data }) => data, () => null);
+    return track.file;
+  }
+
+  function setReaderTrack(path) {
+    if (path === readerTrack?.path) return;
+    if (readerTrack) {
+      stopReaderMusic(readerTrack);
+      void readerTrack.context?.close().catch(() => {});
+    }
+    readerTrack = path ? { path, requested: false, request: 0 } : null;
+    if (readerTrack) void downloadTrack(readerTrack);
     musicStatus.textContent = "";
+    syncReaderMusic();
   }
 
-  async function playReaderMusic(entry) {
-    if ((entry.music_path ?? null) === readerMusicPath) return;
-    clearReaderMusic();
-    if (!entry.music_path) return;
-    readerMusicPath = entry.music_path;
-    const request = readerMusicRequest;
-    $("diary-reader-music").hidden = false;
-    musicStatus.textContent = "正在加载背景音乐…";
+  async function wakeTrack(track) {
+    const AudioContext = window.AudioContext ?? window.webkitAudioContext;
+    if (!AudioContext) throw new Error("audio_unavailable");
+    track.context ??= new AudioContext();
+    await track.context.resume();
+    return track.context;
+  }
+
+  function decodeTrack(track, context) {
+    track.buffer ??= downloadTrack(track).then(async (file) => {
+      if (!file) throw new Error("audio_download_failed");
+      return context.decodeAudioData(await file.arrayBuffer());
+    });
+    return track.buffer;
+  }
+
+  async function playReaderMusic() {
+    const track = readerTrack;
+    if (!track || track.requested || reader.dataset.phase !== "letter") return;
+    track.requested = true;
+    const request = ++track.request;
+    musicStatus.textContent = "";
+    syncReaderMusic();
     try {
-      const { data, error } = await supabase.storage.from(musicBucket).download(entry.music_path);
-      if (request !== readerMusicRequest) return;
-      if (error) throw error;
-      readerMusicUrl = URL.createObjectURL(data);
-      musicPlayer.src = readerMusicUrl;
-      musicPlayer.hidden = false;
-      musicStatus.textContent = "背景音乐";
-      if (entry.author_id !== userId) await musicPlayer.play();
-    } catch (error) {
-      if (request !== readerMusicRequest) return;
-      musicStatus.textContent = error.name === "NotAllowedError"
-        ? "轻点播放按钮，开始播放背景音乐。"
-        : "背景音乐暂时无法播放。";
+      const context = await wakeTrack(track);
+      if (track !== readerTrack || request !== track.request) return;
+      const buffer = await decodeTrack(track, context);
+      if (track !== readerTrack || request !== track.request) return;
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      source.onended = () => {
+        source.disconnect();
+        track.source = null;
+        track.requested = false;
+        if (track === readerTrack) syncReaderMusic();
+      };
+      source.start();
+      track.source = source;
+    } catch {
+      if (track !== readerTrack || request !== track.request) return;
+      track.requested = false;
+      track.buffer = null;
+      track.file = null;
+      musicStatus.textContent = "背景音乐暂时无法播放，请点音符重试。";
+      syncReaderMusic();
     }
   }
 
-  function renderReader(entry, animate) {
-    readerEntry = entry;
-    $("diary-reader-meta").textContent = entryMetadata(entry);
-    $("diary-reader-status").textContent = "";
-    const contents = element("div", null, animate ? "diary-read-contents is-opening" : "diary-read-contents");
-    contents.append(envelopeArt(entry.envelope, entry.seal), letterPaper(entry));
-    replacePaper(readerContents, contents);
+  function setReaderPhase(phase) {
+    reader.dataset.phase = phase;
+    const opened = phase === "letter";
+    envelopeStage.hidden = opened;
+    readerScroll.hidden = !opened;
+    syncReaderMusic();
+  }
+
+  function renderLetter(entry) {
+    replacePaper(readerContents, letterPaper(entry));
     $("diary-edit").hidden = entry.author_id !== userId;
     $("diary-delete").hidden = entry.author_id !== userId;
-    void playReaderMusic(entry);
   }
 
-  function clearReader(message = "") {
+  function renderReader(entry) {
+    const firstLoad = !readerEntry;
+    readerEntry = entry;
+    $("diary-reader-status").textContent = "";
+    setReaderTrack(entry.music_path || undefined);
+    if (reader.dataset.phase === "letter") {
+      renderLetter(entry);
+    } else if (reader.dataset.phase === "sealed") {
+      const cover = envelopeArt(entry.envelope, entry.seal);
+      const sheet = element("span", null, "diary-paper diary-opening-sheet");
+      sheet.dataset.paper = entry.paper;
+      cover.append(sheet, element("span", null, "diary-opening-fold"));
+      envelopeArtwork.replaceChildren(cover);
+      openEnvelope.hidden = false;
+      if (firstLoad && document.activeElement === $("diary-close-reader")) openEnvelope.focus();
+    }
+  }
+
+  function clearReader(message = "", phase = "sealed") {
+    bouquet.stop();
     readerEntry = null;
-    $("diary-reader-meta").textContent = "";
     $("diary-reader-status").textContent = message;
+    setReaderPhase(phase);
+    openEnvelope.hidden = true;
+    openEnvelope.disabled = false;
+    envelopeArtwork.replaceChildren();
     replacePaper(readerContents);
-    clearReaderMusic();
+    setReaderTrack(undefined);
     $("diary-edit").hidden = true;
     $("diary-delete").hidden = true;
   }
 
-  async function readCurrent(animate) {
+  function showReaderError(message) {
+    clearReader(message, reader.dataset.phase === "letter" ? "letter" : "sealed");
+  }
+
+  function markOpenedDiary(entry, request) {
+    if (reader.dataset.phase === "letter" && entry.delivery_on && entry.author_id !== userId && markedReaderId !== entry.id) {
+      void markDeliveryRead(entry, request);
+    }
+  }
+
+  async function readCurrent() {
     const request = ++readerRequest;
     try {
       const { data, error } = await loadEntry(readerId);
       if (request !== readerRequest) return;
       if (error) throw error;
       if (!data) {
-        clearReader("这封日记已删除或目前不可见。");
+        showReaderError("这封日记已删除或目前不可见。");
         return;
       }
-      if (data.version !== readerEntry?.version) renderReader(data, animate);
-      else $("diary-reader-meta").textContent = entryMetadata(data);
-      if (data.delivery_on && data.author_id !== userId && markedReaderId !== data.id) {
-        void markDeliveryRead(data, request);
-      }
+      if (data.version !== readerEntry?.version) renderReader(data);
+      markOpenedDiary(data, request);
     } catch (error) {
-      if (request === readerRequest) clearReader(messageFor(error, "这封日记暂时打不开，请关闭后重试。"));
+      if (request === readerRequest) showReaderError(messageFor(error, "这封日记暂时打不开，请关闭后重试。"));
     }
   }
 
-  function openEntry(id) {
+  function openEntry(id, opener) {
     if (!userId || reader.open) return;
+    ++readerSession;
     readerId = id;
-    clearReader("正在拆信…");
-    reader.showModal();
-    $("diary-reader-scroll").scrollTop = 0;
-    return readCurrent(true);
+    readerOpener = opener;
+    readerScrollTop = houseContent.scrollTop;
+    clearReader("正在取信…");
+    void bouquet.preload();
+    reader.show();
+    houseContent.scrollTop = 0;
+    return readCurrent();
   }
 
-  function closeReader() {
+  async function revealLetter() {
+    if (!readerEntry || reader.dataset.phase !== "sealed") return;
+    const session = readerSession;
+    const track = readerTrack;
+    // Prepare sound inside the tap so playback can begin as soon as the paper appears.
+    if (track) {
+      void wakeTrack(track).then((context) => {
+        if (track === readerTrack) return decodeTrack(track, context);
+      }).catch(() => {});
+    }
+    setReaderPhase("opening");
+    openEnvelope.disabled = true;
+    $("diary-close-reader").focus({ preventScroll: true });
+    const sheet = envelopeArtwork.querySelector(".diary-opening-sheet");
+    const animations = sheet?.getAnimations?.() ?? [];
+    await Promise.allSettled([...animations.map((animation) => animation.finished), bouquet.play()]);
+    if (session !== readerSession || !readerEntry || reader.dataset.phase !== "opening") return;
+    renderLetter(readerEntry);
+    setReaderPhase("letter");
+    houseContent.scrollTop = 0;
+    const heading = readerContents.querySelector("h3");
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+    markOpenedDiary(readerEntry, readerRequest);
+    void playReaderMusic();
+  }
+
+  function closeReader(restoreFocus = true) {
+    if (!reader.open) return false;
+    ++readerSession;
     ++readerRequest;
     readerId = null;
     markedReaderId = null;
+    reader.close();
     clearReader();
-    if (reader.open) reader.close();
+    if (restoreFocus) {
+      const target = readerOpener?.getClientRects().length ? readerOpener : houseContent;
+      target.focus({ preventScroll: true });
+      houseContent.scrollTop = readerScrollTop;
+    }
+    readerOpener = null;
+    return true;
   }
 
   function addChoices(target, field, catalog, sample) {
@@ -712,8 +840,8 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
 
   $("diary-write").addEventListener("click", () => openComposer());
   $("diary-retry").addEventListener("click", () => refresh());
-  $("diary-open-incoming").addEventListener("click", () => {
-    if (incomingId) void openEntry(incomingId);
+  $("diary-open-incoming").addEventListener("click", (event) => {
+    if (incomingId) void openEntry(incomingId, event.currentTarget);
   });
   for (const button of filterButtons) {
     button.addEventListener("click", () => {
@@ -762,9 +890,9 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     updateMusicSelection("已移除配乐。");
     musicInput.focus();
   });
-  musicPlayer.addEventListener("play", () => { musicStatus.textContent = "背景音乐"; });
-  musicPlayer.addEventListener("error", () => {
-    if (readerMusicUrl) musicStatus.textContent = "这段音频无法播放。";
+  musicToggle.addEventListener("click", () => {
+    if (readerTrack?.requested) stopReaderMusic(readerTrack);
+    else void playReaderMusic();
   });
   bodyInput.addEventListener("input", updateCount);
   $("diary-back").addEventListener("click", () => { syncText(); showStep(step - 1); });
@@ -781,8 +909,15 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   $("diary-compose-form").addEventListener("submit", sendDiary);
   $("diary-cancel").addEventListener("click", () => closeComposer());
   composer.addEventListener("cancel", (event) => { event.preventDefault(); closeComposer(); });
-  $("diary-close-reader").addEventListener("click", closeReader);
+  $("diary-close-reader").addEventListener("click", () => closeReader());
+  openEnvelope.addEventListener("click", () => void revealLetter());
   reader.addEventListener("cancel", (event) => { event.preventDefault(); if (!deleting) closeReader(); });
+  reader.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !deleting) {
+      event.preventDefault();
+      closeReader();
+    }
+  });
   $("diary-edit").addEventListener("click", () => {
     const entry = readerEntry;
     if (entry?.author_id !== userId) return;
@@ -793,7 +928,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   window.addEventListener("focus", () => {
     if (!userId) return;
     refresh();
-    if (readerId) void readCurrent(false);
+    if (readerId) void readCurrent();
   });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && userId) refresh();
@@ -814,6 +949,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
         if (!document.hidden) void refreshDeliveries({ refreshEntries: true });
       }, deliveryRefreshMs);
     },
+    leaveReader() { return closeReader(false); },
     refreshList,
     refreshMailbox() {
       void refreshList();
@@ -828,7 +964,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       renderIncoming(null);
       updateStorageNotice();
       closeComposer(true);
-      closeReader();
+      closeReader(false);
       latest.replaceChildren();
       list.replaceChildren();
     }

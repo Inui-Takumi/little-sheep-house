@@ -119,7 +119,9 @@ export async function verifyBrowser({key, first, second, firstLogin, secondLogin
     await two.page.locator("#notes-list").getByText(marker,{exact:true}).waitFor({timeout:15000});
     await openPanel(two.page, "capsules");
     await two.page.locator("#diary-list").getByText(sharedDiary,{exact:true}).click();
-    const letter=two.page.locator('#diary-reader [data-font="longcang"][data-paper="grid"] .diary-letter-body');
+    const envelope=two.page.locator('#house-content #diary-reader[open][data-phase="sealed"]:not(:modal) #diary-open-envelope');
+    await envelope.click();
+    const letter=two.page.locator('#house-content #diary-reader[open][data-phase="letter"]:not(:modal) [data-font="longcang"][data-paper="grid"] .diary-letter-body');
     await letter.waitFor({state:"visible",timeout:15000});
     check(await letter.textContent() === "测试正文\n第二行","第二位住客可以按所选样式阅读公开日记");
     check(!(await two.page.locator("#diary-edit").isVisible()),"第二位住客无法编辑对方的日记");

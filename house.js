@@ -28,7 +28,7 @@ function must(result) { if (result.error) throw result.error; return result.data
 function report(error) { console.error("House request failed", error?.code || error?.status || "unknown"); status(error?.code === "23505" ? "这条记录已经存在，请刷新后重试；在一起的第一天只能设置一次。" : "暂时无法完成操作，请检查网络后重试。"); }
 
 const houseContent = $("house-content");
-const panels = new Map(Array.from(houseContent.children, (panel) => [`#${panel.id}`, panel]));
+const panels = new Map(Array.from(houseContent.querySelectorAll(":scope > .house-panel"), (panel) => [`#${panel.id}`, panel]));
 const navLinks = document.querySelectorAll(".house-nav a");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const lamb = $("house-lamb");
@@ -68,7 +68,8 @@ async function markNotesRead() {
 
 function showPanel(fragment, moveFocus = false) {
   const panel = panels.get(fragment) ?? $("overview");
-  if (panel === activePanel) return;
+  const closedReader = diary.leaveReader();
+  if (panel === activePanel && !closedReader) return;
   activePanel = panel;
   for (const entry of panels.values()) entry.hidden = entry !== panel;
   for (const link of navLinks) {

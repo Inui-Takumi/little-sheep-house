@@ -147,7 +147,35 @@
           <form id="question-form" class="compose"><label for="question-choice">选一个问题</label><select id="question-choice"><option>我们第一次见面时，你对我的印象是什么？</option><option>最近哪件小事让你想到了我？</option><option>接下来最想和我一起做什么？</option></select><label for="question-answer">你的回答</label><textarea id="question-answer" maxlength="1000" required></textarea><button class="button" type="submit">写下答案</button></form><div id="question-results"></div>
           <div class="section-heading"><div><p class="eyebrow">A LITTLE HELLO</p><h2>小羊互动角 <span>✳</span></h2></div></div><p id="interaction-message" class="section-copy">点一下，看看小羊的小小问候。</p><button id="wave" class="button" type="button">挥挥手 ♡</button> <button id="hug" class="button" type="button">送个拥抱</button> <button id="flower" class="button" type="button">送朵花 ✿</button><p id="achievements" class="section-copy"></p>
       </section>
+      <dialog id="diary-reader" class="diary-dialog diary-reader" aria-label="时光信箱">
+        <div class="diary-dialog-layout">
+          <div class="diary-reader-tools">
+            <button id="diary-music-toggle" class="diary-music-toggle" type="button" aria-label="播放背景音乐" aria-pressed="false" title="播放背景音乐" hidden><span aria-hidden="true">♫</span></button>
+            <button id="diary-close-reader" type="button" class="diary-icon-button" aria-label="关闭日记">×</button>
+          </div>
+          <div class="diary-reader-main">
+            <p id="diary-reader-status" class="diary-message" role="status"></p>
+            <div id="diary-envelope-stage" class="diary-envelope-stage">
+              <button id="diary-open-envelope" class="diary-open-envelope" type="button" hidden>
+                <span id="diary-envelope-art" aria-hidden="true"></span>
+                <span class="diary-open-caption">点击拆开信封</span>
+              </button>
+            </div>
+            <div id="diary-reader-scroll" class="diary-dialog-scroll" hidden>
+              <p id="diary-music-status" class="diary-message" role="status"></p>
+              <div id="diary-reader-content"></div>
+            </div>
+          </div>
+          <div class="diary-dialog-actions">
+            <button id="diary-edit" type="button" class="diary-secondary" hidden>编辑日记</button>
+            <button id="diary-delete" type="button" class="diary-secondary diary-delete" hidden>删除日记</button>
+          </div>
+        </div>
+      </dialog>
     </main>
+    <div class="diary-bouquet-overlay" aria-hidden="true">
+      <canvas id="diary-opening-bouquet" class="diary-opening-bouquet"></canvas>
+    </div>
     <svg class="diary-art-definitions" width="0" height="0" aria-hidden="true" focusable="false">
       <defs>
         <filter id="diary-pencil" color-interpolation-filters="sRGB">
@@ -229,26 +257,6 @@
           <button type="submit" class="button" id="diary-send" hidden>寄出</button>
         </div>
       </form>
-    </dialog>
-    <dialog id="diary-reader" class="diary-dialog" aria-labelledby="diary-reader-title">
-      <div class="diary-dialog-layout">
-        <header class="diary-dialog-header">
-          <div><p id="diary-reader-meta"></p><h2 id="diary-reader-title">拆开日记</h2></div>
-          <button id="diary-close-reader" type="button" class="diary-icon-button" aria-label="关闭日记">×</button>
-        </header>
-        <div id="diary-reader-scroll" class="diary-dialog-scroll">
-          <p id="diary-reader-status" class="diary-message" role="status"></p>
-          <div id="diary-reader-music" class="diary-reader-music" hidden>
-            <p id="diary-music-status" role="status"></p>
-            <audio id="diary-audio" controls aria-label="信件背景音乐" hidden></audio>
-          </div>
-          <div id="diary-reader-content"></div>
-        </div>
-        <div class="diary-dialog-actions">
-          <button id="diary-edit" type="button" class="diary-secondary" hidden>编辑日记</button>
-          <button id="diary-delete" type="button" class="diary-secondary diary-delete" hidden>删除日记</button>
-        </div>
-      </div>
     </dialog>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <footer class="house-footer">
