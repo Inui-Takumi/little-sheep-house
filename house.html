@@ -148,6 +148,15 @@
           <div class="section-heading"><div><p class="eyebrow">A LITTLE HELLO</p><h2>小羊互动角 <span>✳</span></h2></div></div><p id="interaction-message" class="section-copy">点一下，看看小羊的小小问候。</p><button id="wave" class="button" type="button">挥挥手 ♡</button> <button id="hug" class="button" type="button">送个拥抱</button> <button id="flower" class="button" type="button">送朵花 ✿</button><p id="achievements" class="section-copy"></p>
       </section>
     </main>
+    <svg class="diary-art-definitions" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <filter id="diary-pencil" color-interpolation-filters="sRGB">
+          <feColorMatrix type="saturate" values="0" result="gray"/>
+          <feGaussianBlur in="gray" stdDeviation="0.8" result="soft"/>
+          <feComposite in="gray" in2="soft" operator="arithmetic" k2="3.5" k3="-3.5" k4="1"/>
+        </filter>
+      </defs>
+    </svg>
     <dialog id="diary-compose" class="diary-dialog" aria-labelledby="diary-compose-title">
       <form id="diary-compose-form" class="diary-dialog-layout" novalidate>
         <header class="diary-dialog-header">
@@ -202,6 +211,14 @@
               <label for="diary-delivery-date">投递日期（北京时间 00:00）</label>
               <input id="diary-delivery-date" type="date" max="9999-12-31">
             </div>
+            <fieldset class="diary-music" id="diary-music-options">
+              <legend>背景音乐（可选）</legend>
+              <label for="diary-music-file">从本机选择音乐</label>
+              <input id="diary-music-file" type="file" accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav" aria-describedby="diary-music-help diary-music-selection">
+              <p id="diary-music-help">支持 MP3、M4A、WAV，最大 10 MB。音乐随信件一起寄出。</p>
+              <p id="diary-music-selection" role="status"></p>
+              <button id="diary-remove-music" type="button" class="diary-secondary" hidden>移除音乐</button>
+            </fieldset>
           </section>
           <div id="diary-compose-preview" class="diary-compose-preview" hidden></div>
         </div>
@@ -221,6 +238,10 @@
         </header>
         <div id="diary-reader-scroll" class="diary-dialog-scroll">
           <p id="diary-reader-status" class="diary-message" role="status"></p>
+          <div id="diary-reader-music" class="diary-reader-music" hidden>
+            <p id="diary-music-status" role="status"></p>
+            <audio id="diary-audio" controls aria-label="信件背景音乐" hidden></audio>
+          </div>
           <div id="diary-reader-content"></div>
         </div>
         <div class="diary-dialog-actions">

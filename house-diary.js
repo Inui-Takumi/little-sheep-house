@@ -4,9 +4,12 @@ const details = `${summaries},body,paper,font,version`;
 const pageSize = 20;
 const editable = ["visibility", "title", "body", "envelope", "paper", "font", "seal", "delivery_on"];
 const deliveryRefreshMs = 60000;
+const musicBucket = "house-diary-music";
+const musicLimit = 10 * 1024 * 1024;
+const musicTypes = new Map([["mp3", "audio/mpeg"], ["m4a", "audio/mp4"], ["wav", "audio/wav"]]);
 
 const envelopes = { rose: "粉玫瑰", stock: "紫罗兰", post: "奶油邮局", night: "月夜星光" };
-const papers = { ruled: "暖白横线", kraft: "素面牛皮", grid: "淡紫格纹", cloud: "浅蓝云纹" };
+const papers = { ruled: "暖白横线", kraft: "素面牛皮", grid: "淡紫格纹", cloud: "浅蓝云纹", botanical: "玫瑰与紫罗兰" };
 const seals = {
   lamb: { name: "小羊", mark: "🐑" },
   heart: { name: "爱心", mark: "♥" },
@@ -92,12 +95,20 @@ function envelopeArt(style, seal) {
   return cover;
 }
 
+function addWatermarks(paper) {
+  const layer = element("span", null, "diary-paper-watermarks");
+  layer.setAttribute("aria-hidden", "true");
+  layer.append(element("span", null, "diary-paper-flowers"));
+  paper.append(layer);
+}
+
 function letterPaper(entry) {
   const paper = element("article", null, "diary-paper diary-letter");
   const font = useFont(entry.font);
   paper.dataset.paper = entry.paper;
   paper.dataset.font = entry.font;
   paper.style.setProperty("--diary-family", `"${font.family}"`);
+  if (entry.paper === "botanical") addWatermarks(paper);
   paper.append(
     element("h3", titleOf(entry)),
     element("p", entry.body, "diary-letter-body")
@@ -112,6 +123,10 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   const titleInput = $("diary-title");
   const bodyInput = $("diary-body");
   const deliveryInput = $("diary-delivery-date");
+  const musicInput = $("diary-music-file");
+  const musicPlayer = $("diary-audio");
+  const musicStatus = $("diary-music-status");
+  const readerContents = $("diary-reader-content");
   const preview = $("diary-compose-preview");
   const list = $("diary-list");
   const latest = $("diary-latest");
@@ -120,7 +135,18 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
   const deliveryModes = Array.from(composer.querySelectorAll('input[name="delivery"]'));
   const filterButtons = Array.from(document.querySelectorAll("[data-diary-filter]"));
   const choices = [];
+  const paperObserver = new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const layer = target.querySelector(".diary-paper-watermarks");
+      const rowHeight = parseFloat(getComputedStyle(layer).gridAutoRows);
+      const count = Math.max(1, Math.ceil(layer.clientHeight / rowHeight));
+      while (layer.childElementCount > count) layer.lastElementChild.remove();
+      while (layer.childElementCount < count) layer.append(element("span", null, "diary-paper-flowers"));
+    }
+  });
   let userId, draft, readerEntry, readerId;
+  let readerMusicPath, readerMusicUrl;
+  let readerMusicRequest = 0;
   let step = 0;
   let page = 0;
   let filter = "all";
@@ -144,8 +170,19 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     return query.order("created_at", { ascending: false }).order("id", { ascending: false });
   }
 
-  function loadEntry(id) {
+  async function loadEntry(id) {
+    const result = await diaryQuery(`${details},music_path`).eq("id", id).maybeSingle();
+    if (result.error?.code !== "42703") return result;
     return diaryQuery(details).eq("id", id).maybeSingle();
+  }
+
+  function replacePaper(container, ...nodes) {
+    const selector = '.diary-letter[data-paper="botanical"]';
+    const previous = container.querySelector(selector);
+    if (previous) paperObserver.unobserve(previous);
+    container.replaceChildren(...nodes);
+    const paper = container.querySelector(selector);
+    if (paper) paperObserver.observe(paper);
   }
 
   function isPending(entry) {
@@ -280,22 +317,64 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     void refreshDeliveries();
   }
 
+  function clearReaderMusic() {
+    ++readerMusicRequest;
+    readerMusicPath = null;
+    musicPlayer.pause();
+    if (readerMusicUrl) {
+      musicPlayer.removeAttribute("src");
+      musicPlayer.load();
+      URL.revokeObjectURL(readerMusicUrl);
+      readerMusicUrl = null;
+    }
+    musicPlayer.hidden = true;
+    $("diary-reader-music").hidden = true;
+    musicStatus.textContent = "";
+  }
+
+  async function playReaderMusic(entry) {
+    if ((entry.music_path ?? null) === readerMusicPath) return;
+    clearReaderMusic();
+    if (!entry.music_path) return;
+    readerMusicPath = entry.music_path;
+    const request = readerMusicRequest;
+    $("diary-reader-music").hidden = false;
+    musicStatus.textContent = "正在加载背景音乐…";
+    try {
+      const { data, error } = await supabase.storage.from(musicBucket).download(entry.music_path);
+      if (request !== readerMusicRequest) return;
+      if (error) throw error;
+      readerMusicUrl = URL.createObjectURL(data);
+      musicPlayer.src = readerMusicUrl;
+      musicPlayer.hidden = false;
+      musicStatus.textContent = "背景音乐";
+      if (entry.author_id !== userId) await musicPlayer.play();
+    } catch (error) {
+      if (request !== readerMusicRequest) return;
+      musicStatus.textContent = error.name === "NotAllowedError"
+        ? "轻点播放按钮，开始播放背景音乐。"
+        : "背景音乐暂时无法播放。";
+    }
+  }
+
   function renderReader(entry, animate) {
     readerEntry = entry;
     $("diary-reader-meta").textContent = entryMetadata(entry);
     $("diary-reader-status").textContent = "";
     const contents = element("div", null, animate ? "diary-read-contents is-opening" : "diary-read-contents");
     contents.append(envelopeArt(entry.envelope, entry.seal), letterPaper(entry));
-    $("diary-reader-content").replaceChildren(contents);
+    replacePaper(readerContents, contents);
     $("diary-edit").hidden = entry.author_id !== userId;
     $("diary-delete").hidden = entry.author_id !== userId;
+    void playReaderMusic(entry);
   }
 
   function clearReader(message = "") {
     readerEntry = null;
     $("diary-reader-meta").textContent = "";
     $("diary-reader-status").textContent = message;
-    $("diary-reader-content").replaceChildren();
+    replacePaper(readerContents);
+    clearReaderMusic();
     $("diary-edit").hidden = true;
     $("diary-delete").hidden = true;
   }
@@ -360,6 +439,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     const sample = element("span", null, "diary-paper diary-paper-sample");
     sample.dataset.paper = key;
     sample.setAttribute("aria-hidden", "true");
+    if (key === "botanical") addWatermarks(sample);
     return sample;
   });
   addChoices("diary-seal-choices", "seal", Object.fromEntries(Object.entries(seals).map(([key, seal]) => [key, seal.name])), wax);
@@ -407,10 +487,10 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
 
   function renderPreview() {
     preview.hidden = step < 3;
-    preview.replaceChildren();
-    if (preview.hidden) return;
-    if (step >= 4) preview.append(envelopeArt(draft.envelope, draft.seal));
-    if (step !== 4) preview.append(letterPaper(draft));
+    const nodes = [];
+    if (step >= 4) nodes.push(envelopeArt(draft.envelope, draft.seal));
+    if (step >= 3 && step !== 4) nodes.push(letterPaper(draft));
+    replacePaper(preview, ...nodes);
   }
 
   function showStep(index, moveFocus = true) {
@@ -437,12 +517,16 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       id: crypto.randomUUID(), ...defaultStyles, title: "", body: "", delivery_on: null
     };
     draft.originalDeliveryOn = draft.delivery_on;
+    draft.music_path = draft.music_path ?? null;
+    draft.originalMusicPath = draft.music_path;
     draft.deliveryMode = draft.delivery_on ? "scheduled" : "now";
     draft.deliveryEditable = entry?.visibility !== "shared" || isPending(entry);
     draft.initial = editable.map((field) => draft[field]);
     titleInput.value = draft.title;
     bodyInput.value = draft.body;
     deliveryInput.value = draft.delivery_on ?? "";
+    musicInput.value = "";
+    updateMusicSelection();
     $("diary-compose-title").textContent = entry ? "编辑日记" : "写日记";
     updateCount();
     showStep(0, false);
@@ -459,15 +543,18 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     if (!draft) return false;
     syncText();
     return draft.deliveryMode !== (draft.originalDeliveryOn ? "scheduled" : "now") ||
+      draft.music_path !== draft.originalMusicPath ||
       editable.some((field, index) => draft[field] !== draft.initial[index]);
   }
 
-  function closeComposer(force = false) {
+  function closeComposer(force = false, saved = false) {
     if (!force && (saving || (draftChanged() && !confirm("放弃这次修改？")))) return;
+    if (!saved && draft?.musicUpload?.attempted) void removeMusic(draft.music_path);
     draft = null;
     titleInput.value = "";
     bodyInput.value = "";
-    preview.replaceChildren();
+    musicInput.value = "";
+    replacePaper(preview);
     $("diary-compose-status").textContent = "";
     if (composer.open) composer.close();
   }
@@ -484,6 +571,35 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     return false;
   }
 
+  function updateMusicSelection(message) {
+    $("diary-music-selection").textContent = message ??
+      (draft.musicUpload?.file.name ?? (draft.music_path ? "已有配乐。选择新文件可替换。" : ""));
+    $("diary-remove-music").hidden = !draft.music_path;
+  }
+
+  async function removeMusic(path) {
+    if (!path) return;
+    const { error } = await supabase.storage.from(musicBucket).remove([path]);
+    if (error) console.warn("Diary music cleanup failed", error.code ?? error.name);
+  }
+
+  function clearDraftUpload() {
+    if (draft.musicUpload?.attempted) void removeMusic(draft.music_path);
+    draft.musicUpload = null;
+  }
+
+  async function ensureMusicUploaded(entry) {
+    const upload = entry.musicUpload;
+    if (!upload) return;
+    const bucket = supabase.storage.from(musicBucket);
+    upload.attempted = true;
+    const data = upload.file.slice(0, upload.file.size, upload.type);
+    const result = await bucket.upload(entry.music_path, data, { cacheControl: "0" });
+    if (result.error && !(await bucket.exists(entry.music_path)).data) {
+      throw new Error("diary_music_upload");
+    }
+  }
+
   async function storeDiary(entry, payload) {
     const change = entry.version == null
       ? supabase.from(table).insert({ id: entry.id, ...payload })
@@ -493,7 +609,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
 
     // A request can reach the database even if its response never reaches the browser.
     const existing = await loadEntry(entry.id);
-    if (!existing.error && existing.data && editable.every((field) => existing.data[field] === payload[field])) return;
+    if (!existing.error && existing.data && Object.entries(payload).every(([field, value]) => existing.data[field] === value)) return;
     if (!error || error.code === "23505") {
       throw new Error("diary_conflict");
     }
@@ -521,17 +637,29 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     const payload = Object.fromEntries(editable.map((field) => [field, entry[field]]));
     payload.title = payload.title.trim();
     payload.delivery_on = deliveryOn;
+    if (entry.music_path !== entry.originalMusicPath) payload.music_path = entry.music_path;
     saving = true;
     const buttons = ["diary-send", "diary-back", "diary-cancel", "diary-review-visibility", "diary-cancel-delivery"].map($);
     buttons.forEach((button) => { button.disabled = true; });
     $("diary-delivery-options").disabled = true;
+    $("diary-music-options").disabled = true;
     deliveryInput.disabled = true;
     $("diary-compose-status").textContent = editing ? "正在保存…" : "正在寄出…";
     try {
+      if (entry.musicUpload) {
+        $("diary-compose-status").textContent = "正在上传背景音乐…";
+        await ensureMusicUploaded(entry);
+        if (draft !== entry) {
+          void removeMusic(entry.music_path);
+          return;
+        }
+        $("diary-compose-status").textContent = editing ? "正在保存…" : "正在寄出…";
+      }
       await storeDiary(entry, payload);
+      if (entry.originalMusicPath !== entry.music_path) void removeMusic(entry.originalMusicPath);
       if (draft !== entry) return;
       updateStorageNotice();
-      closeComposer(true);
+      closeComposer(true, true);
       page = 0;
       refresh();
       status(deliveryOn && deliveryOn > today()
@@ -543,7 +671,9 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       const saveErrors = {
         diary_conflict: "日记已在其他窗口修改或删除。你可以复制当前内容，再重新打开最新的日记。",
         diary_delivery_date_invalid: "所选日期已到，请重新选择投递日期。",
-        diary_already_delivered: "这封信已经投递，请重新打开日记后修改。"
+        diary_already_delivered: "这封信已经投递，请重新打开日记后修改。",
+        diary_music_upload: "背景音乐上传失败。文件和草稿已保留，可以重试。",
+        diary_music_missing: "配乐暂时无法关联，请重新选择文件后重试。"
       };
       $("diary-compose-status").textContent = saveErrors[error.message] ??
         (storageMissing(error) ? "日记存储尚未启用，草稿已保留。存储启用后可以重试。"
@@ -552,6 +682,7 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
       saving = false;
       buttons.forEach((button) => { button.disabled = false; });
       $("diary-delivery-options").disabled = false;
+      $("diary-music-options").disabled = false;
       deliveryInput.disabled = false;
     }
   }
@@ -563,8 +694,10 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     const actions = [$("diary-delete"), $("diary-edit"), $("diary-close-reader")];
     actions.forEach((button) => { button.disabled = true; });
     try {
-      const { error } = await supabase.from(table).delete().eq("id", entry.id).select("id").maybeSingle();
+      const columns = Object.hasOwn(entry, "music_path") ? "id,music_path" : "id";
+      const { data, error } = await supabase.from(table).delete().eq("id", entry.id).select(columns).maybeSingle();
       if (error) throw error;
+      void removeMusic(data?.music_path);
       if (readerId !== entry.id) return;
       closeReader();
       refresh();
@@ -606,6 +739,32 @@ export function createHouseDiary({ supabase, nameOf, status, today }) {
     draft.delivery_on = deliveryInput.value || null;
     $("diary-compose-status").textContent = "";
     updateDeliveryOptions();
+  });
+  musicInput.addEventListener("change", () => {
+    const file = musicInput.files[0];
+    if (!file) return;
+    const type = musicTypes.get(file.name.split(".").pop().toLowerCase());
+    if (!type || file.size === 0 || file.size > musicLimit) {
+      musicInput.value = "";
+      const retained = draft.music_path ? "原配乐已保留。" : "";
+      updateMusicSelection(`请选择不超过 10 MB 的 MP3、M4A 或 WAV 文件。${retained}`);
+      return;
+    }
+    clearDraftUpload();
+    draft.musicUpload = { file, type };
+    draft.music_path = `${userId}/${draft.id}/${crypto.randomUUID()}`;
+    updateMusicSelection();
+  });
+  $("diary-remove-music").addEventListener("click", () => {
+    clearDraftUpload();
+    draft.music_path = null;
+    musicInput.value = "";
+    updateMusicSelection("已移除配乐。");
+    musicInput.focus();
+  });
+  musicPlayer.addEventListener("play", () => { musicStatus.textContent = "背景音乐"; });
+  musicPlayer.addEventListener("error", () => {
+    if (readerMusicUrl) musicStatus.textContent = "这段音频无法播放。";
   });
   bodyInput.addEventListener("input", updateCount);
   $("diary-back").addEventListener("click", () => { syncText(); showStep(step - 1); });

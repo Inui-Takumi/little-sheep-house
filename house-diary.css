@@ -489,8 +489,35 @@
   transform: rotate(10deg);
 }
 
+.diary-art-definitions {
+  position: absolute;
+  overflow: hidden;
+}
+
 [data-envelope="stock"] .diary-envelope-decoration {
-  background: url("./flowers/flower-stock.webp") center / cover;
+  inset: 0;
+  width: auto;
+  aspect-ratio: auto;
+  overflow: hidden;
+  border-radius: inherit;
+  background: none;
+  mask-image: none;
+  transform: none;
+}
+
+[data-envelope="stock"] .diary-envelope-decoration::before,
+[data-envelope="stock"] .diary-envelope-decoration::after {
+  position: absolute;
+  inset: -29% 39% -39% -10%;
+  background: url("./flowers/flower-stock.webp") center / cover no-repeat;
+  filter: url("#diary-pencil") sepia(.32) hue-rotate(236deg) saturate(1.6);
+  transform: rotate(-19deg);
+  content: "";
+}
+
+[data-envelope="stock"] .diary-envelope-decoration::after {
+  inset: -21% -12% -39% 40%;
+  transform: scaleX(-1) rotate(-17deg);
 }
 
 [data-envelope="post"] .diary-envelope-decoration,
@@ -567,6 +594,95 @@
     radial-gradient(ellipse at 85% 70%, #fff9f2, transparent 42%);
 }
 
+.diary-paper[data-paper="botanical"] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 8rem;
+  background: #fff6eb;
+}
+
+.diary-paper-watermarks {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: grid;
+  grid-auto-rows: 136px;
+  align-content: start;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.diary-paper-flowers {
+  --rose-x: 58%;
+  --rose-y: 12px;
+  --violet-x: 23%;
+  --violet-y: 66px;
+  --flower-speed: 11s;
+  --flower-delay: -3s;
+  position: relative;
+  display: block;
+}
+
+.diary-paper-flowers:nth-child(3n + 2) {
+  --rose-x: 79%;
+  --rose-y: 54px;
+  --violet-x: 45%;
+  --violet-y: 12px;
+  --flower-speed: 13s;
+  --flower-delay: -8s;
+}
+
+.diary-paper-flowers:nth-child(3n) {
+  --rose-x: 30%;
+  --rose-y: 56px;
+  --violet-x: 70%;
+  --violet-y: 13px;
+  --flower-speed: 10s;
+  --flower-delay: -5s;
+}
+
+.diary-paper-flowers::before,
+.diary-paper-flowers::after {
+  --flower-opacity: .22;
+  position: absolute;
+  top: var(--rose-y);
+  left: var(--rose-x);
+  width: min(27%, 88px);
+  aspect-ratio: 3 / 2;
+  background: url("./flowers/flower-plate.webp") 0 0 / 200% 200%;
+  filter: saturate(1.65) hue-rotate(-12deg);
+  mix-blend-mode: multiply;
+  opacity: var(--flower-opacity);
+  transform: translateX(-50%) rotate(32deg);
+  content: "";
+}
+
+.diary-paper-flowers::after {
+  --flower-opacity: .19;
+  top: var(--violet-y);
+  left: var(--violet-x);
+  width: min(21%, 64px);
+  aspect-ratio: 1;
+  background: url("./flowers/flower-stock.webp") center / cover;
+  filter: saturate(1.35);
+}
+
+.effects-running .diary-letter .diary-paper-flowers::before,
+.effects-running .diary-letter .diary-paper-flowers::after {
+  animation: diary-watermark-pass var(--flower-speed) var(--flower-delay) cubic-bezier(.22, 1, .36, 1) infinite;
+}
+
+.effects-running .diary-letter .diary-paper-flowers::after {
+  animation-delay: calc(var(--flower-delay) - 5s);
+}
+
+@keyframes diary-watermark-pass {
+  from { opacity: 0; translate: 42px -26px; }
+  16%, 55% { opacity: var(--flower-opacity); }
+  82%, to { opacity: 0; translate: -48px 30px; }
+}
+
 .diary-paper-sample {
   display: block;
   width: min(100%, 74px);
@@ -574,6 +690,26 @@
   border: 1px solid #e3cebc;
   border-radius: 3px;
   clip-path: polygon(0 0, 82% 0, 100% 25%, 100% 100%, 0 100%);
+}
+
+.diary-paper-sample[data-paper="botanical"] {
+  min-height: 0;
+}
+
+.diary-paper-sample .diary-paper-watermarks {
+  grid-auto-rows: 100%;
+}
+
+.diary-paper-sample .diary-paper-flowers {
+  --rose-x: 59%;
+  --rose-y: 2px;
+  --violet-x: 31%;
+  --violet-y: 13px;
+}
+
+.diary-paper-sample .diary-paper-flowers::before,
+.diary-paper-sample .diary-paper-flowers::after {
+  opacity: .75;
 }
 
 .diary-letter {
@@ -584,6 +720,43 @@
   overflow-wrap: anywhere;
   color: #523d3c;
   font: 400 1.0625rem/1.75 var(--diary-family), "Noto Serif SC", "Songti SC", SimSun, serif;
+}
+
+.diary-music,
+.diary-reader-music {
+  min-width: 0;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid #e7d2c3;
+  border-radius: 8px;
+  background: #fff8f1;
+}
+
+.diary-music legend {
+  color: #654946;
+  font-weight: 600;
+}
+
+.diary-music input {
+  min-width: 0;
+}
+
+.diary-music p,
+.diary-reader-music p {
+  margin: 4px 0;
+  color: #754e4b;
+  font-size: .75rem;
+  line-height: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.diary-reader-music {
+  margin: 0 0 12px;
+}
+
+.diary-reader-music audio {
+  display: block;
+  inline-size: min(100%, 24rem);
 }
 
 .diary-letter h3 {
@@ -639,6 +812,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .effects-running .diary-letter .diary-paper-flowers::before,
+  .effects-running .diary-letter .diary-paper-flowers::after {
+    animation: none;
+  }
+
   .diary-read-contents.is-opening .diary-letter,
   .diary-read-contents.is-opening .diary-envelope::after {
     animation: none;

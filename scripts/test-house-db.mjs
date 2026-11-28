@@ -187,6 +187,58 @@ try {
   await db.exec("reset role");
   assert.equal((await db.query("select entry_id from private.house_diary_delivery_reads where entry_id=$1", [scheduledId])).rows.length, 0);
   console.log("日期投递：历史公开信兼容、到期前保密、改期和取消、收信方提醒与去重通过");
+
+  await db.exec(await readFile(new URL("../supabase/migrations/202611280008_house_diary_music.sql", import.meta.url), "utf8"));
+  const musicBucket = "house-diary-music";
+  const musicId = "00000000-0000-0000-0000-000000000016";
+  const objectId = "00000000-0000-0000-0000-000000000017";
+  const musicPath = `${first}/${musicId}/${objectId}`;
+  const otherPath = `${second}/${musicId}/${objectId}`;
+  const upload = (path) => db.query("insert into storage.objects values ($1,$2)", [musicBucket, path]);
+  const readObject = () => db.query("select name from storage.objects where bucket_id=$1 and name=$2", [musicBucket, musicPath]);
+  const removeObject = () => db.query("delete from storage.objects where bucket_id=$1 and name=$2 returning name", [musicBucket, musicPath]);
+
+  assert.deepEqual((await db.query("select public,file_size_limit,allowed_mime_types from storage.buckets where id=$1", [musicBucket])).rows[0], {
+    public: false, file_size_limit: 10485760, allowed_mime_types: ["audio/mpeg", "audio/mp4", "audio/wav"]
+  });
+  await as(second);
+  await upload(otherPath);
+  await assert.rejects(upload(musicPath));
+  await as(first);
+  assert.equal((await db.query("select music_path from house_diary_entries where id=$1", [privateId])).rows[0].music_path, null);
+  const insertMusic = (path) => db.query(
+    `insert into house_diary_entries(id,visibility,body,paper,delivery_on,music_path)
+     values ($1,'shared','配乐试信','botanical',${beijingDate} + 1,$2)`, [musicId, path]
+  );
+  await assert.rejects(insertMusic(musicPath));
+  await assert.rejects(insertMusic(otherPath));
+  await upload(musicPath);
+  await as(second);
+  assert.equal((await readObject()).rows.length, 0);
+  await as(first);
+  await insertMusic(musicPath);
+  assert.equal((await readObject()).rows.length, 1);
+  assert.equal((await removeObject()).rows.length, 0);
+  await as(second);
+  assert.equal((await readObject()).rows.length, 0);
+  await db.exec("reset role; alter table house_diary_entries disable trigger house_diary_delivery_before_write");
+  await db.query(`update house_diary_entries set delivery_on=${beijingDate} where id=$1`, [musicId]);
+  await db.exec("alter table house_diary_entries enable trigger house_diary_delivery_before_write");
+  await as(second);
+  assert.equal((await readObject()).rows.length, 1);
+  assert.equal((await removeObject()).rows.length, 0);
+  await as(outsider);
+  assert.equal((await readObject()).rows.length, 0);
+  await db.exec("reset role; set role anon");
+  await assert.rejects(readObject());
+  await as(first);
+  await db.query("update house_diary_entries set visibility='private' where id=$1", [musicId]);
+  await as(second);
+  assert.equal((await readObject()).rows.length, 0);
+  await as(first);
+  await db.query("update house_diary_entries set music_path=null where id=$1", [musicId]);
+  assert.equal((await removeObject()).rows.length, 1);
+  console.log("信件配乐：信纸兼容、文件归属、私密和定时封存、到期读取及解除关联后清理通过");
   console.log("共享权限、私有照片规则、时光信件及双人问答：本机数据库测试通过");
 } finally {
   await db.close();
